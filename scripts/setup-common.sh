@@ -39,7 +39,8 @@ function chsh_zsh() {
 }
 
 function install_rsubl() {
-  if [ "$SKIP_PKG_INSTALL" = true ]; then
+  if [ "$REMOTE_CONTAINERS" = true ]; then
+    print_default "Skip rsubl installation in remote container"
 	  return 0
   fi
 
@@ -71,6 +72,11 @@ function install_rsubl() {
 }
 
 function setup_ssh_default_config() {
+  if [ "$REMOTE_CONTAINERS" = true ]; then
+    print_default "Skip SSH default config installation in remote container"
+	  return 0
+  fi
+
   ssh_config="${HOME}/.ssh/config"
 
   # Check if config file exists

@@ -53,6 +53,10 @@ function parser_options() {
     DEBUG=true
     set -x
   fi
+  if [ "$REMOTE_CONTAINERS" = true ]; then
+    SKIP_PKG_INSTALL=true
+    print_info "Skip the packages installation and ssh setup that the remote container doesn't need."
+  fi
 }
 
 function run_with_env() {
