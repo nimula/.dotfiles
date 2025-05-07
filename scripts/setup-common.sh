@@ -118,20 +118,22 @@ function setup_config_links() {
   run git config --global include.path "$CONFIG_DIR/git/.gitconfig.static"
 }
 
-function setup_zim() {
+function install_zim() {
   export ZIM_HOME=${ZDOTDIR:-${HOME}}/.zim
   # Install zim if it isn't already present
   if [[ ! -d "$ZIM_HOME" ]]; then
     print_default "Install zim..."
     curl -fsSL https://raw.githubusercontent.com/zimfw/install/master/install.zsh | zsh
   fi
+}
 
+function setup_zim() {
   print_default "Setting up zim..."
   # Update zim module.
-  run zsh ~/.zim/zimfw.zsh install
-  run zsh ~/.zim/zimfw.zsh update
-  run zsh ~/.zim/zimfw.zsh upgrade
-  run zsh ~/.zim/zimfw.zsh compile
+  run zsh "$ZIM_HOME/zimfw.zsh" install
+  run zsh "$ZIM_HOME/zimfw.zsh" update
+  run zsh "$ZIM_HOME/zimfw.zsh" upgrade
+  run zsh "$ZIM_HOME/zimfw.zsh" compile
 
   set_skip_global_compinit
 }
@@ -150,10 +152,11 @@ function set_skip_global_compinit() {
 }
 
 function main() {
-  setup_zim
   setup_ssh_default_config
-  setup_config_links
   install_rsubl
+  install_zim
+  setup_config_links
+  setup_zim
 }
 
 main "$@"
