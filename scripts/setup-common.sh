@@ -72,6 +72,9 @@ function install_rsubl() {
 }
 
 function setup_ssh_default_config() {
+  include_path="${CONFIG_DIR}/ssh/config"
+  chmod 600 "$include_path"
+
   if [ "$REMOTE_CONTAINERS" = true ]; then
     print_default "Skip SSH default config installation in remote container"
 	  return 0
@@ -87,10 +90,10 @@ function setup_ssh_default_config() {
   fi
 
   # Check if include line already exists
-  if ! grep -q "Include ${CONFIG_DIR}/ssh/config" "$ssh_config"; then
+  if ! grep -q "Include $include_path" "$ssh_config"; then
     print_default "Added include line to SSH config file"
     temp_file=$(mktemp)
-    run bash -c "printf \"Include %s/ssh/config\n\n\" \"$CONFIG_DIR\" > \"$temp_file\" && cat \"$ssh_config\" >> \"$temp_file\""
+    run bash -c "printf \"Include %s\n\n\" \"$include_path\" > \"$temp_file\" && cat \"$ssh_config\" >> \"$temp_file\""
     run cp -f "$temp_file" "$ssh_config"
     run chmod 600 "$ssh_config"
     rm $temp_file

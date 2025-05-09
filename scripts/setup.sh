@@ -10,6 +10,7 @@ ENV_VARS="
   VERBOSE=false
   DEBUG=false
   SKIP_PKG_INSTALL=false
+  REMOTE_CONTAINERS=false
 "
 
 function cleanup() {
