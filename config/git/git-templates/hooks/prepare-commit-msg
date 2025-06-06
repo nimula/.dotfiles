@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+
+COMMIT_MSG_FILE=$1
+COMMIT_SOURCE=$2
+SHA1=$3
+
+# Skip for merge commits
+if [[ "$COMMIT_SOURCE" == "merge" ]]; then
+  exit 0
+fi
+
+# Load .env if present
+if [[ -f .env ]]; then
+  export $(grep -v '^#' .env | xargs)
+fi
+
+# Define open ai model and prompt
+MODEL="gpt-4o"
+read -r -d "" PROMPT << EOP
+Write a concise and focused commit message in English (width: 80) using the Conventional Commits format based on the patch provided.
+Summarize only the key changes. Do not describe every detail.
+Only return the plain commit message.
+Do not include any code fences (like triple backticks), markdown formatting, or explanations.
+EOP
+read -r -d "" PROMPT_PR << EOP
+As a PR title generation assistant, your task is to generate concise titles.
+ Rules: 1. Use English 2. Focus only on the main change direction 3. Don't list
+ details or use semicolons 4. Follow conventional commit format
+ (feat/fix/docs/refactor/chore) 5. Format should be 'type: brief description
+ (#issue)' 6. Remove (#issue) if no issue exists 7. Return title directly.
+EOP
+
+# If no API key, skip AI and allow normal commit
+if [[ -z "$OPENAI_API_KEY" ]]; then
+  echo "[INFO] OPENAI_API_KEY is not set. Skipping AI-generated commit message."
+  exit 0
+fi
+
+# Get staged diff
+DIFF=$(git diff --cached)
+
+# If no changes staged, allow normal commit
+if [[ -z "$DIFF" ]]; then
+  exit 0
+fi
+
+# Prepare prompt payload
+JSON_PROMPT=$(jq -n \
+  --arg sys "$PROMPT" \
+  --arg usr "$DIFF" \
+  '[
+    { "role": "system", "content": $sys },
+    { "role": "user", "content": $usr }
+  ]'
+)
+
+# Inform user before API call
+echo -e "\033[1;34m[INFO]\033[0m Calling OpenAI API to generate commit message. Please wait..."
+
+# Call OpenAI API
+RESPONSE=$(curl -s -w "\n%{http_code}" https://api.openai.com/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -d @- <<EOF
+{
+  "model": "$MODEL",
+  "messages": $JSON_PROMPT,
+  "max_completion_tokens": 300,
+  "temperature": 0.4
+}
+EOF
+)
+
+# Split response into body and HTTP status
+HTTP_BODY=$(echo "$RESPONSE" | sed '$d')
+HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
+
+# If API call fails, abort commit
+if [[ "$HTTP_STATUS" -ne 200 ]]; then
+  echo -e "\033[1;31m[ERROR]\033[0m OpenAI API call failed (HTTP $HTTP_STATUS). Aborting commit."
+  echo "$HTTP_BODY"
+  exit 1
+fi
+
+# Extract and validate commit message
+COMMIT_MESSAGE=$(echo "$HTTP_BODY" | jq -r '.choices[0].message.content' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+
+if [[ -z "$COMMIT_MESSAGE" || "$COMMIT_MESSAGE" == "null" ]]; then
+  echo -e "\033[1;31m[ERROR]\033[0m Received empty commit message from OpenAI. Aborting commit."
+  echo "$HTTP_BODY"
+  exit 1
+fi
+
+# Insert commit message at the top of the commit message file
+EXISTING_MSG=$(cat "$COMMIT_MSG_FILE")
+echo -e "$COMMIT_MESSAGE\n\n$EXISTING_MSG" > "$COMMIT_MSG_FILE"

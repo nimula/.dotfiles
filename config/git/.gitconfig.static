@@ -1,61 +1,61 @@
 [alias]
-	info = remote -v
-	co = checkout
-	br = branch -v
-	ci = commit
-	st = status -uno
-	dt = difftool
-	dtb = difftool -b
-	db = diff -b
-	dw = diff -b --word-diff
-	rt = reset --hard
-	unstage = reset HEAD
-	uncommit = reset --soft HEAD^
-	# list all alias
-	la = "!git config -l | grep alias | cut -c 7-"
-	# custom color one line with author
-	l = "log --graph --format=format:'%C(bold blue)%h%C(reset) \
+  info = remote -v
+  co = checkout
+  br = branch -v
+  ci = commit
+  st = status -uno
+  dt = difftool
+  dtb = difftool -b
+  db = diff -b
+  dw = diff -b --word-diff
+  rt = reset --hard
+  unstage = reset HEAD
+  uncommit = reset --soft HEAD^
+  # list all alias
+  la = "!git config -l | grep alias | cut -c 7-"
+  # custom color one line with author
+  l = "log --graph --format=format:'%C(bold blue)%h%C(reset) \
 %C(auto)%s%C(reset) %C(bold yellow)<%an>%C(reset)%C(auto)%d%C(reset)' \
 --abbrev-commit --date=relative"
-	# custom color one line with author and relative author date
-	ld = "log --graph --all --format=format:'%C(bold blue)%h%C(reset) - \
+  # custom color one line with author and relative author date
+  ld = "log --graph --all --format=format:'%C(bold blue)%h%C(reset) - \
 %C(bold green)(%ar)%C(reset) %C(auto)%s%C(reset) %C(bold yellow)<%an>%C(reset)\
 %C(auto)%d%C(reset)' --abbrev-commit --date=relative"
-	# one line for short
-	ls = log --pretty=one line --abbrev-commit --graph --decorate
+  # one line for short
+  ls = log --pretty=one line --abbrev-commit --graph --decorate
 
-	who = shortlog -n -s --no-merges
-	g = grep -n --color -E
-	# 'git add -u' handles deleted files, but not new files
-	# 'git add .' handles any current and new files, but not deleted
-	# 'git addall' now handles all changes
- 	addall = !sh -c 'git add . && git add -u'
-	# Handy shortcuts for rebasing
- 	rc = rebase --continue
- 	rs = rebase --skip
-	ra = rebase --abort
-	rh = rebase HEAD
-	sp = stash pop
-	last = log -1 HEAD
-	files = "!f() { git diff --name-status $1^ $1; }; f"
-	snapshot = !git stash save "snapshot: $(date)" && git stash apply "stash@{0}"
+  who = shortlog -n -s --no-merges
+  g = grep -n --color -E
+  # 'git add -u' handles deleted files, but not new files
+  # 'git add .' handles any current and new files, but not deleted
+  # 'git addall' now handles all changes
+  addall = !sh -c 'git add . && git add -u'
+  # Handy shortcuts for rebasing
+  rc = rebase --continue
+  rs = rebase --skip
+  ra = rebase --abort
+  rh = rebase HEAD
+  sp = stash pop
+  last = log -1 HEAD
+  files = "!f() { git diff --name-status $1^ $1; }; f"
+  snapshot = !git stash save "snapshot: $(date)" && git stash apply "stash@{0}"
 [branch]
-	autosetuprebase = always
+  autosetuprebase = always
 [color]
-	ui = true
-	status = always
+  ui = true
+  status = always
 [core]
-	editor = vim
-	excludesfile = ~/.gitignore.global
-	pager = less -x1,5
-	precomposeunicode = true
+  editor = vim
+  excludesfile = ~/.gitignore.global
+  pager = less -x1,5
+  precomposeunicode = true
 [format]
   # pretty = %C(auto)%h%Creset -%C(auto)%d%Creset %s %C(bold blue)<%an> %Cgreen(%cr)%Creset
 [log]
-	abbrevCommit = true
+  abbrevCommit = true
 [push]
-	default = current
+  default = current
 [pull]
-	rebase = true
+  rebase = true
 [rebase]
-	autoStash = true
+  autoStash = true

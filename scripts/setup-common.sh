@@ -119,6 +119,7 @@ function setup_config_links() {
 
   # Link static gitconfig.
   run git config --global include.path "$CONFIG_DIR/git/.gitconfig.static"
+  run git config --global init.templatedir "$CONFIG_DIR/git/git-templates"
 }
 
 function install_zim() {
