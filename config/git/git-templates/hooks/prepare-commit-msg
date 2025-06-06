@@ -9,33 +9,6 @@ if [[ "$COMMIT_SOURCE" == "merge" ]]; then
   exit 0
 fi
 
-# Load .env if present
-if [[ -f .env ]]; then
-  export $(grep -v '^#' .env | xargs)
-fi
-
-# Define open ai model and prompt
-MODEL="gpt-4o"
-read -r -d "" PROMPT << EOP
-Write a concise and focused commit message in English (width: 80) using the Conventional Commits format based on the patch provided.
-Summarize only the key changes. Do not describe every detail.
-Only return the plain commit message.
-Do not include any code fences (like triple backticks), markdown formatting, or explanations.
-EOP
-read -r -d "" PROMPT_PR << EOP
-As a PR title generation assistant, your task is to generate concise titles.
- Rules: 1. Use English 2. Focus only on the main change direction 3. Don't list
- details or use semicolons 4. Follow conventional commit format
- (feat/fix/docs/refactor/chore) 5. Format should be 'type: brief description
- (#issue)' 6. Remove (#issue) if no issue exists 7. Return title directly.
-EOP
-
-# If no API key, skip AI and allow normal commit
-if [[ -z "$OPENAI_API_KEY" ]]; then
-  echo "[INFO] OPENAI_API_KEY is not set. Skipping AI-generated commit message."
-  exit 0
-fi
-
 # Get staged diff
 DIFF=$(git diff --cached)
 
@@ -44,7 +17,52 @@ if [[ -z "$DIFF" ]]; then
   exit 0
 fi
 
-# Prepare prompt payload
+# Load .env if present
+if [[ -f .env ]]; then
+  export $(grep -v '^#' .env | xargs)
+fi
+
+# If no API key, skip AI and allow normal commit
+if [[ -z "$OPENAI_API_KEY" ]]; then
+  echo "[INFO] OPENAI_API_KEY is not set. Skipping AI-generated commit message."
+  exit 0
+fi
+
+# Check if this is an amend commit
+IS_AMEND=false
+if [[ "$COMMIT_SOURCE" == "commit" && -n "$SHA1" ]]; then
+  IS_AMEND=true
+fi
+
+# Define open ai
+MODEL="gpt-4o"
+
+# Set different prompt based on amend or normal commit
+if $IS_AMEND; then
+  read -r -d "" PROMPT << EOP
+Write a short and clear message in English (width: 80) to supplement the previous commit.
+Focus only on what was added or changed in this amendment.
+Only return the plain commit message.
+Do not include any code fences (like triple backticks), markdown formatting, or explanations.
+EOP
+else
+  read -r -d "" PROMPT << EOP
+Write a concise and focused commit message in English (width: 80) using the Conventional Commits format based on the patch provided.
+Summarize only the key changes. Do not describe every detail.
+Only return the plain commit message.
+Do not include any code fences (like triple backticks), markdown formatting, or explanations.
+EOP
+fi
+
+read -r -d "" PROMPT_PR << EOP
+As a PR title generation assistant, your task is to generate concise titles.
+ Rules: 1. Use English 2. Focus only on the main change direction 3. Don't list
+ details or use semicolons 4. Follow conventional commit format
+ (feat/fix/docs/refactor/chore) 5. Format should be 'type: brief description
+ (#issue)' 6. Remove (#issue) if no issue exists 7. Return title directly.
+EOP
+
+# Build OpenAI request payload
 JSON_PROMPT=$(jq -n \
   --arg sys "$PROMPT" \
   --arg usr "$DIFF" \
@@ -75,22 +93,23 @@ EOF
 HTTP_BODY=$(echo "$RESPONSE" | sed '$d')
 HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
 
-# If API call fails, abort commit
+# Abort if API call failed
 if [[ "$HTTP_STATUS" -ne 200 ]]; then
   echo -e "\033[1;31m[ERROR]\033[0m OpenAI API call failed (HTTP $HTTP_STATUS). Aborting commit."
   echo "$HTTP_BODY"
   exit 1
 fi
 
-# Extract and validate commit message
+# Extract commit message
 COMMIT_MESSAGE=$(echo "$HTTP_BODY" | jq -r '.choices[0].message.content' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 
+# Abort if message invalid
 if [[ -z "$COMMIT_MESSAGE" || "$COMMIT_MESSAGE" == "null" ]]; then
   echo -e "\033[1;31m[ERROR]\033[0m Received empty commit message from OpenAI. Aborting commit."
   echo "$HTTP_BODY"
   exit 1
 fi
 
-# Insert commit message at the top of the commit message file
+# Insert AI message before existing commit message
 EXISTING_MSG=$(cat "$COMMIT_MSG_FILE")
 echo -e "$COMMIT_MESSAGE\n\n$EXISTING_MSG" > "$COMMIT_MSG_FILE"
