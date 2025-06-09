@@ -41,7 +41,7 @@ function chsh_zsh() {
 function install_rsubl() {
   if [ "$REMOTE_CONTAINERS" = true ]; then
     print_default "Skip rsubl installation in remote container"
-	  return 0
+    return 0
   fi
 
   # Test to see if rsubl is installed.
@@ -64,10 +64,10 @@ function install_rsubl() {
 
   if [ -n "$SUDO" ]; then
     run sudo curl -fsSL "$SRC" -o "$DEST/rsubl"
-  	run sudo chmod a+x "$DEST/rsubl"
+    run sudo chmod a+x "$DEST/rsubl"
   else
     run curl -fsSL "$SRC" -o "$DEST/rsubl"
-  	run chmod a+x "$DEST/rsubl"
+    run chmod a+x "$DEST/rsubl"
   fi
 }
 
@@ -77,7 +77,7 @@ function setup_ssh_default_config() {
 
   if [ "$REMOTE_CONTAINERS" = true ]; then
     print_default "Skip SSH default config installation in remote container"
-	  return 0
+    return 0
   fi
 
   ssh_config="${HOME}/.ssh/config"
@@ -118,8 +118,8 @@ function setup_config_links() {
   fi
 
   # Link static gitconfig.
-  run git config --global include.path "$CONFIG_DIR/git/.gitconfig.static"
-  run git config --global init.templatedir "$CONFIG_DIR/git/git-templates"
+  run git config --global include.path "~/${CONFIG_DIR#$HOME/}/git/.gitconfig.static"
+  run git config --global init.templatedir "~/${CONFIG_DIR#$HOME/}/git/git-templates"
 }
 
 function install_zim() {
