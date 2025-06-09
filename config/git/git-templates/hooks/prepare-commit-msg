@@ -35,22 +35,61 @@ if [[ "$COMMIT_SOURCE" == "commit" && -n "$SHA1" ]]; then
 fi
 
 # Define open ai
-MODEL="gpt-4o"
+MODEL="gpt-4.1"
+
+read -r -d "" CONVENTIONAL_COMMITS << EOP
+# Conventional commits
+#
+# <type>[optional scope]: <description>
+#
+# [optional body]
+#
+# [optional footer(s)]
+#
+# Type must be one of the following:
+# build: Changes that affect the build system or external dependencies
+# ci: Changes to our CI configuration files and scripts
+# docs: Documentation only changes
+# feat: A new feature
+# fix: A bug fix
+# perf: A code change that improves performance
+# refactor: A code change that neither fixes a bug nor adds a feature
+# style: Changes that do not affect the meaning of the code
+#        (white-space, formatting, missing semi-colons, etc)
+# test: Adding missing tests or correcting existing tests
+#
+EOP
 
 # Set different prompt based on amend or normal commit
 if $IS_AMEND; then
   read -r -d "" PROMPT << EOP
-Write a short and clear message in English (width: 80) to supplement the previous commit.
-Focus only on what was added or changed in this amendment.
-Only return the plain commit message.
-Do not include any code fences (like triple backticks), markdown formatting, or explanations.
+You are generating a commit message to supplement the previous commit.
+Analyze the additional changes in this amendment and summarize their main purpose or effect as a subject line (first line), following the Conventional Commits format (e.g., build:, ci:, docs:, feat:, fix:, perf:, refactor:, style:, test:). Keep it concise (max 80 characters).
+
+Then, after a blank line, list specific changes introduced in this amendment as bullet points (-). Keep each point short and informative.
+
+Rules:
+- Use English
+- Markdown formatting is allowed, but do not include code fences (like triple backticks) or explanations
+- Return the message only
 EOP
 else
   read -r -d "" PROMPT << EOP
-Write a concise and focused commit message in English (width: 80) using the Conventional Commits format based on the patch provided.
-Summarize only the key changes. Do not describe every detail.
-Only return the plain commit message.
-Do not include any code fences (like triple backticks), markdown formatting, or explanations.
+You are a commit message generator. Based on the provided git diff, analyze the change and determine the main purpose or effect of the change. Use that as the subject line (first line) following the Conventional Commits format (e.g., feat:, fix:, refactor:, doc:, chore:, etc..).
+Then, in the body (after a blank line), list the key implementation changes as bullet points (-).
+
+Rules:
+- Use English
+- Keep the subject line under 80 characters
+- Markdown formatting is allowed, but do not include code fences (like triple backticks) or explanations
+- Return the message only
+
+Example output:
+feat(component): add new validation to login form
+
+- add error messages for empty input
+- validate email format with regex
+- update tests for invalid scenarios
 EOP
 fi
 
@@ -112,4 +151,4 @@ fi
 
 # Insert AI message before existing commit message
 EXISTING_MSG=$(cat "$COMMIT_MSG_FILE")
-echo -e "$COMMIT_MESSAGE\n\n$EXISTING_MSG" > "$COMMIT_MSG_FILE"
+echo -e "$COMMIT_MESSAGE\n\n$EXISTING_MSG\n\n$CONVENTIONAL_COMMITS" > "$COMMIT_MSG_FILE"
