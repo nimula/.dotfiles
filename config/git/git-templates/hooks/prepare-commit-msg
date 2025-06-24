@@ -4,8 +4,8 @@ COMMIT_MSG_FILE=$1
 COMMIT_SOURCE=$2
 SHA1=$3
 
-# Skip for merge commits
-if [[ "$COMMIT_SOURCE" == "merge" ]]; then
+# Skip for merge and message commits
+if [[ "$COMMIT_SOURCE" == "merge" || "$COMMIT_SOURCE" == "message" ]]; then
   exit 0
 fi
 
