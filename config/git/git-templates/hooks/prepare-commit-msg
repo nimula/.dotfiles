@@ -64,7 +64,9 @@ EOP
 if $IS_AMEND; then
   read -r -d "" PROMPT << EOP
 You are generating a commit message to supplement the previous commit.
-Analyze the additional changes in this amendment and summarize their main purpose or effect as a subject line (first line), following the Conventional Commits format (e.g., build:, ci:, docs:, feat:, fix:, perf:, refactor:, style:, test:). Keep it concise (max 80 characters).
+Analyze the additional changes in this amendment and summarize their main purpose or effect as a subject line (first line), following the Conventional Commits format.
+*Only* use one of: build:, ci:, docs:, feat:, fix:, perf:, refactor:, style:, test:
+Keep it concise (max 80 characters).
 
 Then, after a blank line, list specific changes introduced in this amendment as bullet points (-). Keep each point short and informative.
 
@@ -75,7 +77,8 @@ Rules:
 EOP
 else
   read -r -d "" PROMPT << EOP
-You are a commit message generator. Based on the provided git diff, analyze the change and determine the main purpose or effect of the change. Use that as the subject line (first line) following the Conventional Commits format (e.g., feat:, fix:, refactor:, doc:, chore:, etc..).
+You are a commit message generator. Based on the provided git diff, analyze the change and determine the main purpose or effect of the change. Use that as the subject line (first line) following the Conventional Commits format.
+*Only* use one of: build:, ci:, docs:, feat:, fix:, perf:, refactor:, style:, test:
 Then, in the body (after a blank line), list the key implementation changes as bullet points (-).
 
 Rules:
@@ -95,10 +98,16 @@ fi
 
 read -r -d "" PROMPT_PR << EOP
 As a PR title generation assistant, your task is to generate concise titles.
- Rules: 1. Use English 2. Focus only on the main change direction 3. Don't list
- details or use semicolons 4. Follow conventional commit format
- (feat/fix/docs/refactor/chore) 5. Format should be 'type: brief description
- (#issue)' 6. Remove (#issue) if no issue exists 7. Return title directly.
+
+Rules:
+- Use English
+- Focus only on the main change direction
+- Don't list details or use semicolons
+- Follow conventional commit format.
+  *Only* use one of: build:, ci:, docs:, feat:, fix:, perf:, refactor:, style:, test:
+- Format should be 'type: brief description  (#issue)'
+- Remove (#issue) if no issue exists
+- Return title directly.
 EOP
 
 # Build OpenAI request payload
