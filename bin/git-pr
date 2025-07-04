@@ -1,0 +1,677 @@
+#!/usr/bin/env zsh
+# Author : nimula+github@gmail.com
+#
+set -Eeuo pipefail
+
+source print_utils.sh
+
+function usage() {
+  setopt local_options posix_argzero
+
+  cat <<EOF
+git pull requests
+
+Create a pull request from @{push} against @{upstream}.
+
+$(tput bold)USAGE$(tput sgr0)
+  $(tput bold; tput setaf 74)$(basename "$0") <command> [augments] [options]$(tput sgr0)
+
+$(tput bold)COMMAND$(tput sgr0)
+  create:             Create a pull request
+  summary:            Update the pull request description with AI summary
+  open:               Opens the pull request URL for the current branch in the browser
+
+$(tput bold)OPTIONS$(tput sgr0)
+  -B, --base branch   The branch into which you want your code merged
+  -d, --draft         Creates a draft pull request (only applies when creating a new PR)
+  -H, --head branch   The branch that contains commits for your pull request (default [current branch])
+  -n, --no-prompt     Do not prompt for input
+  -s, --silent        Silent mode (do not prompt for input)
+
+  --help              Show this help message
+EOF
+}
+
+function main() {
+  # Read command line options
+  parser_options "$@"
+  # Check environment and dependencies
+  environment_check
+
+  case "$ACTION" in
+    create)
+      create_pr "${ARGS[@]}"
+      ;;
+    summary)
+      update_pr_summary "${ARGS[@]}"
+      ;;
+    open)
+      open_pr "${ARGS[@]}"
+      ;;
+    *)
+      print_error "Unknown command: $ACTION"
+      usage
+      exit 1
+      ;;
+  esac
+}
+
+# ==============================================================================
+# MARK: Environment Setup
+# ==============================================================================
+
+# Default target branch
+# If no branch name is provided, use `main` as the default target branch
+DEFAULT_TARGET_BRANCH="main"
+# Define open ai model
+DEFAULT_MODEL="gpt-4.1"
+# Default label configuration
+DEFAULT_LABEL_CONFIG=(
+  "build:build"
+  "ci:ci"
+  "docs:documentation"
+  "feat:feature"
+  "fix:bug"
+  "perf:enhancement"
+  "refactor:enhancement"
+  "style:enhancement"
+  "test:test"
+)
+
+# PROMPT for AI title generation
+read -r -d '' PROMPT <<'EOP' || true
+You are a pull request title generation. Based on the provided context, summary a concise title.
+
+Rules:
+- Use English
+- Focus only on the main change direction
+- Don't list details or use semicolons
+- Follow conventional commit format.
+  *Only* use one of: build:, ci:, docs:, feat:, fix:, perf:, refactor:, style:, test:
+- Format should be 'type: brief description  (#issue)'
+- Remove (#issue) if no issue exists
+- Return title directly
+EOP
+
+# Command line options
+ARGS=()
+ACTION="create"
+DRAFT=false
+NO_PROMPT=false
+
+# ==============================================================================
+# Functions
+# ==============================================================================
+
+# MARK: Environment Check
+function environment_check() {
+  # Check if GitHub CLI is installed
+  if ! command -v gh &> /dev/null; then
+    print_error "GitHub CLI (gh) is not installed"
+    print_default "Please install GitHub CLI: https://cli.github.com/"
+    exit 1
+  fi
+
+  # Check if jq is installed
+  if ! command -v jq &> /dev/null; then
+    print_error "jq is not installed, cannot parse JSON response"
+    exit 1
+  fi
+
+  # Check if logged in to GitHub
+  if ! gh auth status &> /dev/null; then
+    print_info "Please log in to GitHub:"
+    gh auth login
+  fi
+
+  # Try to read local config file
+  if [ -f ".pr-labels" ]; then
+    # Read custom label configuration
+    mapfile -t LABEL_CONFIG < ".pr-labels"
+  else
+    LABEL_CONFIG=("${DEFAULT_LABEL_CONFIG[@]}")
+  fi
+
+  # Load .env if present
+  if [[ -f .env ]]; then
+    set -o allexport
+    source .env
+    set +o allexport
+  fi
+
+  # If OPENAI_API_KEY is not set, try to get from pass
+  if [ -z "${OPENAI_API_KEY:-}" ] && command -v pass >/dev/null 2>&1; then
+    api_key_from_pass=$(pass show openai/key 2>/dev/null)
+    if [ -n "$api_key_from_pass" ]; then
+      OPENAI_API_KEY="$api_key_from_pass"
+    fi
+  fi
+
+  # Check if OPENAI_API_KEY env variable is set
+  if [ -z "${OPENAI_API_KEY:-}" ]; then
+    print_warning "OPENAI_API_KEY environment variable is not set, cannot use AI to generate title suggestion"
+    HAS_AI=false
+  else
+    HAS_AI=true
+  fi
+
+  # TODO: stop setting this once `gh` gains decent up/push branch recognition.
+  # Set GH_REPO and GH_HOST environment variables based on the upstream remote
+  # Ref: https://github.com/cli/cli/issues/7216#issuecomment-1479568670
+  local up_ref=$(branch_ref "@{upstream}") # e.g. up/main
+  local up_remote=${up_ref%%/*} # e.g. up
+  export GH_REPO=$(remote_url "$up_remote")
+}
+
+# MARK: Parse Command Line Options
+function parser_options() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      create | summary | open)
+        ACTION="$1"
+        ;;
+      -B|--base)
+        TARGET_BRANCH="$2"
+        print_default "Set target branch to: $TARGET_BRANCH"
+        shift
+        ;;
+      -H|--head)
+        CURRENT_BRANCH="$2"
+        print_default "Set current branch to: $CURRENT_BRANCH"
+        shift
+        ;;
+      -d|--draft)
+        DRAFT=true
+        print_info "Draft mode enabled. PR will be created as a draft."
+        ;;
+      -n|--no-prompt)
+        NO_PROMPT=true
+        print_info "No prompt mode enabled. No user input will be requested."
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      -*)
+        print_error "Unknown option: $1"
+        usage
+        exit 1
+        ;;
+      *)
+        ARGS+=("$1")
+        ;;
+    esac
+    shift
+  done
+
+  if [[ -n "${ARGS[*]}" && -z "$ACTION" ]]; then
+    ACTION="${ARGS[0]}"
+  fi
+}
+
+# MARK: Ensure Label Exists
+function ensure_label_exists() {
+  local label="$1"
+  local color="${2:-"0366d6"}"  # Use GitHub blue by default
+  local description="${3:-""}"
+
+  # Check if label exists
+  if ! gh api "repos/:owner/:repo/labels/$label" &>/dev/null; then
+    print_info "Label '$label' does not exist, creating..."
+    gh api --silent repos/:owner/:repo/labels \
+      -f name="$label" \
+      -f color="$color" \
+      -f description="$description" || {
+      print_error "Unable to create label '$label'"
+      return 1
+    }
+  fi
+}
+
+# MARK: Generate PR Title with AI
+function generate_pr_title_with_ai() {
+  local branch="$1"
+  local commits="$2"
+
+  read -r -d "" commit_info << EOP || true
+Branch name: $branch
+Commits:
+$commits
+EOP
+
+  local json_prompt=$(jq -n \
+    --arg sys "$PROMPT" \
+    --arg usr "$commit_info" \
+    '[
+      { "role": "system", "content": $sys },
+      { "role": "user", "content": $usr }
+    ]'
+  )
+
+  RESPONSE=$(curl -s -w "\n%{http_code}" https://api.openai.com/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $OPENAI_API_KEY" \
+    -d @- <<EOF
+{
+  "model": "$DEFAULT_MODEL",
+  "messages": $json_prompt,
+  "max_completion_tokens": 100,
+  "temperature": 0.7
+}
+EOF
+)
+  echo "$RESPONSE"
+}
+
+# MARK: Generate PR Title with Dummy Data
+# This function simulates the AI response for testing purposes
+function generate_pr_title_with_dummy() {
+  read -r -d "" RESPONSE << EOP || true
+{
+  "id": "chatcmpl-BmZt7jlBimwrFitsI1LsfsZNVBRmo",
+  "object": "chat.completion",
+  "created": 1750917397,
+  "model": "gpt-4.1-2025-04-14",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "feat: add setuptools-scm versioning and improve UI layout",
+        "refusal": null,
+        "annotations": []
+      },
+      "logprobs": null,
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 275,
+    "completion_tokens": 12,
+    "total_tokens": 287,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "service_tier": "default",
+  "system_fingerprint": "fp_51e1070cf2"
+}
+
+200
+EOP
+  echo "$RESPONSE"
+}
+
+# MARK: Edit Message Function
+function edit_message() {
+  local temp_file=$(mktemp /tmp/edit_msg.XXXXXX)
+  trap "rm -f "$temp_file"" EXIT
+  cat > "$temp_file" <<EOF
+$1
+# Please enter content. Save and exit the editor to continue...
+EOF
+
+  # Launch the editor to allow user to edit the message, tty is used to ensure the editor can read input
+  "${EDITOR:-vim}" "$temp_file" < /dev/tty > /dev/tty && true
+  local rc=$?
+  # If the editor was closed with an error, return the error code
+  if [[ $rc != 0 ]]; then
+    return $rc
+  fi
+
+  # Lines starting with '#' will be ignored, then only remove the empty lines between first non-empty line and second non-empty line
+  local content=$(awk '
+  /^[[:space:]]*#/ { next }          # skip lines starting with #
+  /^[[:space:]]*$/ {                  # blank lines
+    if (started == 0) next           # skip leading blanks
+    if (nonempty == 1) next          # skip blanks between first and second nonempty
+  }
+  {
+    started = 1
+    if ($0 !~ /^[[:space:]]*$/) nonempty++
+    print
+  }
+' "$temp_file")
+
+  # Return content (stdout)
+  echo "$content"
+}
+
+# MARK: Create PR Function
+function create_pr() {
+  # If target branch is not provided, use the default target branch
+  TARGET_BRANCH="${TARGET_BRANCH:-$DEFAULT_TARGET_BRANCH}"
+  # Check if target branch exists
+  if ! git show-ref --verify --quiet "refs/heads/$TARGET_BRANCH"; then
+    print_error "Target branch '$TARGET_BRANCH' does not exist"
+    exit 1
+  fi
+
+  # Get current branch
+  CURRENT_BRANCH="${CURRENT_BRANCH:-$(git symbolic-ref --short HEAD)}"
+  # Check if current branch exists
+  if ! git show-ref --verify --quiet "refs/heads/$CURRENT_BRANCH"; then
+    print_error "Current branch '$CURRENT_BRANCH' does not exist"
+    exit 1
+  fi
+
+  print_info "Current branch: $CURRENT_BRANCH => Target branch: $TARGET_BRANCH"
+
+  local commit_count=$(git rev-list --count origin/$TARGET_BRANCH..$CURRENT_BRANCH)
+  if [ "$commit_count" -eq 0 ]; then
+    print_error "Current branch '$CURRENT_BRANCH' has no new commits"
+    exit 1
+  fi
+
+  # Get all commit titles
+  COMMITS=$(git log origin/$TARGET_BRANCH..$CURRENT_BRANCH --pretty=format:"%s")
+
+  # Show all commits for reference
+  print_default "All commits in the current branch:"
+  git log origin/$TARGET_BRANCH..$CURRENT_BRANCH --pretty=format:"%h %s"
+
+  # Analyze all commits to determine main change type
+  if echo "$COMMITS" | grep -iq "fix\|bug\|hotfix"; then
+    TYPE="fix"
+  elif echo "$COMMITS" | grep -iq "feat\|feature"; then
+    TYPE="feat"
+  elif echo "$COMMITS" | grep -iq "refactor"; then
+    TYPE="refactor"
+  elif echo "$COMMITS" | grep -iq "docs\|doc"; then
+    TYPE="docs"
+  else
+    TYPE="feat"
+  fi
+
+  # Extract issue number if any
+  ISSUE_NUM=$(echo "$CURRENT_BRANCH $COMMITS" | grep -oE '#[0-9]+' || true | head -1)
+
+  AI_SUGGESTION=""
+  # If OPENAI_API_KEY is set, use AI to generate title suggestion
+  if [ "$HAS_AI" = true ]; then
+    print_default "\nGenerating title suggestion with AI..."
+
+    # Use function to generate PR title
+    RESPONSE=$(generate_pr_title_with_ai "$CURRENT_BRANCH" "$COMMITS")
+    # RESPONSE=$(generate_pr_title_with_dummy "$CURRENT_BRANCH" "$COMMITS")
+
+    HTTP_BODY=$(echo "$RESPONSE" | sed '$d')
+    HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
+
+    # Check if API returned error
+    if [[ "$HTTP_STATUS" -ne 200 ]]; then
+      print_warning "API call failed:"
+      print_default "$HTTP_BODY"
+    else
+      # Parse API response
+      AI_SUGGESTION=$(echo -E "$HTTP_BODY" | jq -r '.choices[0].message.content')
+      if [[ -z "$AI_SUGGESTION" || "$AI_SUGGESTION" == "null" ]]; then
+        print_default ""
+        print_warning "Unable to get valid title suggestion from API:"
+        print_default "$HTTP_BODY"
+      else
+        print_default "\nAI suggested title: $AI_SUGGESTION"
+      fi
+    fi
+  else
+    print_default "\nOPENAI_API_KEY not set, cannot use AI to generate title suggestion"
+  fi
+
+  # If AI suggestion is empty, use default title
+  if [[ -z "$AI_SUGGESTION" || "$AI_SUGGESTION" == "null" ]]; then
+    MAIN_COMMIT=$(git log -1 --pretty=%s)
+    if [ -n "$ISSUE_NUM" ]; then
+      AI_SUGGESTION="$TYPE: $MAIN_COMMIT ($ISSUE_NUM)"
+    else
+      AI_SUGGESTION="$TYPE: $MAIN_COMMIT"
+    fi
+    print_default "Using default title: $AI_SUGGESTION"
+  fi
+
+  PR_TITLE="$AI_SUGGESTION"
+  PR_BODY=""
+
+  # Remove duplicate label prefix
+  if [ -n "$PR_TITLE" ]; then
+    # Use LABEL_CONFIG to extract label prefixes
+    LABEL_PREFIXES=$(printf "%s\n" "${LABEL_CONFIG[@]}" | cut -d':' -f1 | tr '\n' '|' | sed 's/|$//')
+
+    # Remove duplicate label prefix
+    FIXED_PR_TITLE=$(echo "$PR_TITLE" | sed -E "s/^($LABEL_PREFIXES): .*($LABEL_PREFIXES)\([^)]*\): /\1: /" || echo "$PR_TITLE")
+
+    # if FIXED_PR_TITLE is not empty and not equal to PR_TITLE, then update PR_TITLE
+    if [[ -n "$FIXED_PR_TITLE" && "$FIXED_PR_TITLE" != "$PR_TITLE" ]]; then
+      print_default "\nTitle after removing duplicate label prefix: $FIXED_PR_TITLE"
+      PR_TITLE="$FIXED_PR_TITLE"
+    fi
+  fi
+
+  # MARK: Manual input
+  # Let user choose whether to manually enter PR title and body
+  if [ "$NO_PROMPT" = true ]; then
+    MANUAL_TITLE="n"
+  else
+    echo -n "\nDo you want to manually enter the PR title and body? (y/N) "
+    read -r MANUAL_TITLE
+    MANUAL_TITLE=$(echo "$MANUAL_TITLE" | tr '[:upper:]' '[:lower:]')
+  fi
+
+  if [[ "$MANUAL_TITLE" == "y" ]]; then
+    read -r -d "" MESSAGE << EOP || true
+$PR_TITLE
+
+# Please enter the PR title and body for your change.
+# First line should be the title, followed by a blank line, then the body.
+# You can use the following format:
+# TYPE: Your title ISSUE_NUM
+# Lines starting with '#' will be ignored, and empty lines between title and body will be skipped.
+EOP
+
+    # use edit_message function to allow user to edit the message
+    USER_INPUT=$(edit_message "$MESSAGE")
+
+    # first line is PR_TITLE, the rest is PR_BODY
+    PR_TITLE=$(echo "$USER_INPUT" | sed -n '1p' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    PR_BODY=$(echo "$USER_INPUT" | sed '1d')
+  fi
+
+  # Ensure PR title is not empty
+  if [ -z "$PR_TITLE" ]; then
+    print_error "PR title cannot be empty"
+    exit 1
+  fi
+
+  # MARK: Generate PR Label
+  # Try to extract label type from branch name or commit
+  PR_LABEL="${LABEL_CONFIG[3]#*:}"  # Use feature type as default
+
+  for label_mapping in "${LABEL_CONFIG[@]}"; do
+    type="${label_mapping%%:*}"
+    label="${label_mapping#*:}"
+    if echo "$CURRENT_BRANCH $PR_TITLE" | grep -iq "$type"; then
+      PR_LABEL="$label"
+      break
+    fi
+  done
+
+  # MARK: PR ready to create
+  print_default "PR title: $PR_TITLE"
+  print_default "PR label: $PR_LABEL"
+  if [ -n "$PR_BODY" ]; then
+    print_default "PR body: $PR_BODY"
+  fi
+
+  print_default "Pushing branch $CURRENT_BRANCH to remote..."
+  git push -u origin "$CURRENT_BRANCH"
+
+  print_default "Creating PR from $CURRENT_BRANCH to $TARGET_BRANCH..."
+
+  # If label is provided, ensure label exists
+  if [ -n "$PR_LABEL" ]; then
+    # Remove possible quotes
+    PR_LABEL=$(echo "$PR_LABEL" | tr -d '"')
+    # Ensure label exists
+    ensure_label_exists "$PR_LABEL"
+  fi
+
+  # Prepare PR create command
+  PR_CMD_ARRAY=(gh pr create --title "$PR_TITLE" --body "$PR_BODY" --base "$TARGET_BRANCH" --head "$CURRENT_BRANCH")
+
+  if [[ "$DRAFT" = true ]]; then
+    PR_CMD_ARRAY+=(--draft)
+    print_default "Creating PR as a draft"
+  fi
+  # If label provided, add to command
+  if [ -n "$PR_LABEL" ]; then
+    PR_CMD_ARRAY+=(--label "$PR_LABEL")
+    print_default "Adding label: $PR_LABEL"
+  fi
+
+  # Execute PR creation command
+  PR_URL=$("${PR_CMD_ARRAY[@]}")
+
+  print_success "PR created: $PR_URL"
+
+  # Extract PR number for later use
+  PR_NUMBER=$(echo $PR_URL | grep -oE '[0-9]+$')
+  if [ -n "$PR_NUMBER" ]; then
+    print_success "PR number: $PR_NUMBER"
+  fi
+
+  open_pr "$PR_NUMBER"
+}
+
+# MARK: Update PR Summary Function
+function update_pr_summary() {
+  local pr_number="${1:-$(get_pr_number)}"
+
+  if [[ -z "$pr_number" ]]; then
+    print_error "No PR number provided"
+    exit 1
+  fi
+  if ! [[ "$pr_number" =~ ^[0-9]+$ ]]; then
+    print_error "PR number must be numeric"
+    exit 1
+  fi
+
+  print_default "Processing PR: $pr_number"
+  print_default "Fetching PR reviews..."
+  local reviews=$(gh pr view $pr_number --json reviews,comments)
+  local review_count=$(echo -E "$reviews" | jq '.reviews | length')
+  print_default "Found $review_count reviews"
+
+  print_default "Looking for gemini-code-assist summary..."
+  # Try to find in reviews first
+  local gemini_review=$(echo -E "$reviews" | jq -r '.reviews[] | select(.author.login == "gemini-code-assist") | .body' || true)
+
+  # If not found in reviews, look in comments
+  if [ -z "$gemini_review" ]; then
+    print_default "Not found in reviews, looking in comments..."
+    gemini_review=$(echo -E "$reviews" | jq -r '.comments[] | select(.author.login == "gemini-code-assist") | .body' || true)
+  fi
+
+  if [ -n "$gemini_review" ]; then
+    print_default "Gemini summary found"
+  else
+    print_default "Gemini summary not found"
+    exit 1
+  fi
+
+  gemini_review=$(echo "$gemini_review" | awk '
+    /^This pull request/ { printing = 1 }
+    !printing { next }
+    /^<details>$/ {
+      # Buffer the <details> line and check the next one to see if it is the Gemini summary.
+      held = $0
+      getline
+      if (/^<summary><b>Using Gemini Code Assist<\/b><\/summary>$/) {
+        exit # Found the Gemini block, so we stop.
+      }
+      # Not the Gemini block, so print the buffered line and the current line.
+      print held
+      print
+      next
+    }
+    { print }
+  ')
+
+  print_default "Gemini Review Content:"
+  echo "$gemini_review" | sed 's/^/  /' | head -n 5
+
+  print_default "Updating PR description..."
+  # Update PR description on the origin repo without setting default remote repository
+  gh pr edit $pr_number --body "$gemini_review"
+  open_pr "$pr_number"
+}
+
+# MARK: Open PR Function
+function open_pr() {
+  # If $1 is provided, use it as the PR number else get the PR number from the current branch
+  local pr_number="${1:-$(get_pr_number)}"
+
+  print_default "Opening PR #$pr_number in browser..."
+  if [[ -z "$pr_number" ]]; then
+    print_error "No PR number provided"
+    exit 1
+  fi
+  if ! [[ "$pr_number" =~ ^[0-9]+$ ]]; then
+    print_error "PR number must be numeric"
+    exit 1
+  fi
+
+  # If the SSH_CONNECTION variable is not set, it means we are not in an SSH session and we can open the PR in the default web browser
+  if [[ -z "${SSH_CONNECTION:-}" ]]; then
+    gh pr view -w $pr_number
+  else
+    print_success "PR updated. Please check in your local browser"
+    print_default "PR URL: $(gh pr view --json url --jq '.url' $pr_number)"
+  fi
+}
+
+function branch_ref() {
+  git rev-parse --abbrev-ref --symbolic-full-name "$1"
+}
+
+function remote_url() {
+  git remote get-url "$1"
+}
+
+# Remote hostname, used for setting GH_HOST.
+function remote_host() {
+  git remote get-url ${1:?} | sed -e 's/^git@//' -e 's|https://||' -e 's/:.*//' -e 's|/.*||'
+}
+
+function remote_org() {
+  git remote get-url $1 | awk -F ':|/' '{if ($NF) {print $(NF-1)} else {print $(NF-2)}}'
+}
+
+function remote_repo() {
+  git remote get-url $1 | sed -e 's|/$||' -e 's|.*/||' -e 's/.git$//'
+}
+
+function get_pr_number() {
+  local pr_number push_ref push_remote push_branch push_org
+
+  push_ref=$(branch_ref "@{push}") # e.g. fork/my-pr-branch
+  push_remote=${push_ref%%/*} # e.g. push
+  push_branch=${push_ref#*/} # e.g. my-pr-branch
+  push_org=$(remote_org "$push_remote")
+
+  # You should be able to just run this:
+  # gh pr view -w
+  # But gh can't detect push branches, e.g. https://github.com/cli/cli/issues/575
+  pr_number=$(gh pr list --state=open --limit=1 --head="$push_org:$push_branch" --json=number --jq='.[].number')
+  # First check open PR branches, then fall back to the most recent closed one.
+  [[ $pr_number =~ ^[0-9]+$ ]] || pr_number=$(gh pr list --state=all --limit=1 --head="$push_branch" --json=number --jq='.[0].number')
+[[ $pr_number =~ ^[0-9]+$ ]] || print_error "Failed to get PR number, output: '$pr_number'"
+  echo "$pr_number"
+}
+
+main "$@"
