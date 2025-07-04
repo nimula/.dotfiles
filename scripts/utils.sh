@@ -4,6 +4,7 @@
 # Get the directory of the current script
 CURR_DIR="$( cd "$( dirname "$0" )" >/dev/null || exit 1; pwd )"
 CONFIG_DIR="$(cd "$CURR_DIR/../config" >/dev/null || exit 1; pwd )"
+BIN_DIR="$(cd "$CURR_DIR/../bin" >/dev/null || exit 1; pwd )"
 
 export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
