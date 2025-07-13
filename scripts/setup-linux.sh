@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Author : nimula+github@gmail.com
 #
-[ "$(uname)" == "Darwin" ] && exit
+[ "$(uname)" != "Linux" ] && exit
 source "$(dirname "$0")/utils.sh"
 
 if [ "$SKIP_PKG_INSTALL" = true ]; then
