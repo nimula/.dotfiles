@@ -15,7 +15,9 @@ ENV_VARS="
 
 function cleanup() {
   trap - SIGINT SIGTERM ERR EXIT
-  tput cnorm # enable cursor
+  if command -v tput >/dev/null 2>&1; then
+    tput cnorm # enable cursor
+  fi
   # script cleanup here
 }
 
