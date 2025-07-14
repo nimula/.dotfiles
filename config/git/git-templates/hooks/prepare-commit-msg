@@ -112,11 +112,11 @@ EOP
 
 # Build OpenAI request payload
 JSON_PROMPT=$(jq -n \
+  --rawfile diff <(echo "$DIFF") \
   --arg sys "$PROMPT" \
-  --arg usr "$DIFF" \
   '[
     { "role": "system", "content": $sys },
-    { "role": "user", "content": $usr }
+    { "role": "user", "content": $diff }
   ]'
 )
 
