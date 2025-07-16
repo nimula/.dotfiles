@@ -4,6 +4,12 @@ COMMIT_MSG_FILE=$1
 COMMIT_SOURCE=$2
 SHA1=$3
 
+# Check if jq is installed
+if ! command -v jq &> /dev/null; then
+  echo -e "[INFO] jq is not installed. Please install jq to use AI-generated commit message."
+  exit 0
+fi
+
 # Skip for merge and message commits
 if [[ "$COMMIT_SOURCE" == "merge" || "$COMMIT_SOURCE" == "message" ]]; then
   exit 0
