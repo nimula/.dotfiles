@@ -5,6 +5,11 @@ set -Eeuo pipefail
 
 source print_utils.sh
 
+# Use the GIT_PR_CLI variable to determine which CLI tool to use for pull
+# request actions. Default to GitHub CLI (gh). This allows future
+# compatibility with other tools such as Azure DevOps (az repos).
+CLI_TOOL=${GIT_PR_CLI:-gh}
+
 function usage() {
   setopt local_options posix_argzero
 
@@ -35,6 +40,8 @@ EOF
 function main() {
   # Read command line options
   parser_options "$@"
+  # Verify selected CLI tool is available
+  check_cli_tool
   # Check environment and dependencies
   environment_check
 
@@ -103,14 +110,18 @@ NO_PROMPT=false
 # Functions
 # ==============================================================================
 
-# MARK: Environment Check
-function environment_check() {
-  # Check if GitHub CLI is installed
-  if ! command -v gh &> /dev/null; then
-    print_error "GitHub CLI (gh) is not installed"
-    print_default "Please install GitHub CLI: https://cli.github.com/"
+# MARK: CLI Tool Check
+function check_cli_tool() {
+  if ! command -v "$CLI_TOOL" &> /dev/null; then
+    print_error "$CLI_TOOL command is not installed"
+    [[ "$CLI_TOOL" = "gh" ]] && print_default "Please install GitHub CLI: https://cli.github.com/"
+    [[ "$CLI_TOOL" = "az" ]] && print_default "Please install Azure CLI: https://learn.microsoft.com/cli/azure/install-azure-cli"
     exit 1
   fi
+}
+
+# MARK: Environment Check
+function environment_check() {
 
   # Check if jq is installed
   if ! command -v jq &> /dev/null; then
@@ -118,11 +129,27 @@ function environment_check() {
     exit 1
   fi
 
-  # Check if logged in to GitHub
-  if ! gh auth status &> /dev/null; then
-    print_info "Please log in to GitHub:"
-    gh auth login
-  fi
+  # Authentication check for different CLIs
+  case "$CLI_TOOL" in
+    gh)
+      if ! gh auth status &> /dev/null; then
+        print_info "Please log in to GitHub:"
+        gh auth login
+      fi
+      PR_CLI=(gh pr)
+      ;;
+    az)
+      if ! az account show &> /dev/null; then
+        print_info "Please log in to Azure:"
+        az login
+      fi
+      PR_CLI=(az repos pr)
+      ;;
+    *)
+      print_error "Unsupported CLI: $CLI_TOOL"
+      exit 1
+      ;;
+  esac
 
   # Try to read local config file
   if [ -f ".pr-labels" ]; then
@@ -211,6 +238,9 @@ function parser_options() {
 
 # MARK: Ensure Label Exists
 function ensure_label_exists() {
+  # Label management is only supported when using GitHub CLI
+  [[ "$CLI_TOOL" != "gh" ]] && return
+
   local label="$1"
   local color="${2:-"0366d6"}"  # Use GitHub blue by default
   local description="${3:-""}"
@@ -522,7 +552,7 @@ EOP
   fi
 
   # Prepare PR create command
-  PR_CMD_ARRAY=(gh pr create --title "$PR_TITLE" --body "$PR_BODY" --base "$TARGET_BRANCH" --head "$CURRENT_BRANCH")
+  PR_CMD_ARRAY=("${PR_CLI[@]}" create --title "$PR_TITLE" --body "$PR_BODY" --base "$TARGET_BRANCH" --head "$CURRENT_BRANCH")
 
   if [[ "$DRAFT" = true ]]; then
     PR_CMD_ARRAY+=(--draft)
@@ -563,7 +593,7 @@ function update_pr_summary() {
 
   print_default "Processing PR: $pr_number"
   print_default "Fetching PR reviews..."
-  local reviews=$(gh pr view $pr_number --json reviews,comments)
+  local reviews=$("${PR_CLI[@]}" view $pr_number --json reviews,comments)
   local review_count=$(echo -E "$reviews" | jq '.reviews | length')
   print_default "Found $review_count reviews"
 
@@ -607,7 +637,7 @@ function update_pr_summary() {
 
   print_default "Updating PR description..."
   # Update PR description on the origin repo without setting default remote repository
-  gh pr edit $pr_number --body "$gemini_review"
+  "${PR_CLI[@]}" edit $pr_number --body "$gemini_review"
   open_pr "$pr_number"
 }
 
@@ -628,10 +658,10 @@ function open_pr() {
 
   # If the SSH_CONNECTION variable is not set, it means we are not in an SSH session and we can open the PR in the default web browser
   if [[ -z "${SSH_CONNECTION:-}" ]]; then
-    gh pr view -w $pr_number
+    "${PR_CLI[@]}" view -w $pr_number
   else
     print_success "PR updated. Please check in your local browser"
-    print_default "PR URL: $(gh pr view --json url --jq '.url' $pr_number)"
+    print_default "PR URL: $("${PR_CLI[@]}" view --json url --jq '.url' $pr_number)"
   fi
 }
 
@@ -665,11 +695,11 @@ function get_pr_number() {
   push_org=$(remote_org "$push_remote")
 
   # You should be able to just run this:
-  # gh pr view -w
-  # But gh can't detect push branches, e.g. https://github.com/cli/cli/issues/575
-  pr_number=$(gh pr list --state=open --limit=1 --head="$push_org:$push_branch" --json=number --jq='.[].number')
+  # ${PR_CLI[*]} view -w
+  # But gh can't detect push branches when pushing from forks.
+  pr_number=$("${PR_CLI[@]}" list --state=open --limit=1 --head="$push_org:$push_branch" --json=number --jq='.[].number')
   # First check open PR branches, then fall back to the most recent closed one.
-  [[ $pr_number =~ ^[0-9]+$ ]] || pr_number=$(gh pr list --state=all --limit=1 --head="$push_branch" --json=number --jq='.[0].number')
+  [[ $pr_number =~ ^[0-9]+$ ]] || pr_number=$("${PR_CLI[@]}" list --state=all --limit=1 --head="$push_branch" --json=number --jq='.[0].number')
 [[ $pr_number =~ ^[0-9]+$ ]] || print_error "Failed to get PR number, output: '$pr_number'"
   echo "$pr_number"
 }
