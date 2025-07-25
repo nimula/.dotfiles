@@ -112,26 +112,13 @@ NO_PROMPT=false
 
 # MARK: CLI Tool Check
 function check_cli_tool() {
-  if ! command -v "$CLI_TOOL" &> /dev/null; then
-    print_error "$CLI_TOOL command is not installed"
-    [[ "$CLI_TOOL" = "gh" ]] && print_default "Please install GitHub CLI: https://cli.github.com/"
-    [[ "$CLI_TOOL" = "az" ]] && print_default "Please install Azure CLI: https://learn.microsoft.com/cli/azure/install-azure-cli"
-    exit 1
-  fi
-}
-
-# MARK: Environment Check
-function environment_check() {
-
-  # Check if jq is installed
-  if ! command -v jq &> /dev/null; then
-    print_error "jq is not installed, cannot parse JSON response"
-    exit 1
-  fi
-
-  # Authentication check for different CLIs
   case "$CLI_TOOL" in
     gh)
+      if ! command -v gh &> /dev/null; then
+        print_error "GitHub CLI (gh) is not installed"
+        print_default "Please install GitHub CLI: https://cli.github.com/"
+        exit 1
+      fi
       if ! gh auth status &> /dev/null; then
         print_info "Please log in to GitHub:"
         gh auth login
@@ -139,6 +126,11 @@ function environment_check() {
       PR_CLI=(gh pr)
       ;;
     az)
+      if ! command -v az &> /dev/null; then
+        print_error "Azure CLI (az) is not installed"
+        print_default "Please install Azure CLI: https://learn.microsoft.com/cli/azure/install-azure-cli"
+        exit 1
+      fi
       if ! az account show &> /dev/null; then
         print_info "Please log in to Azure:"
         az login
@@ -150,6 +142,17 @@ function environment_check() {
       exit 1
       ;;
   esac
+}
+
+# MARK: Environment Check
+function environment_check() {
+
+  # Check if jq is installed
+  if ! command -v jq &> /dev/null; then
+    print_error "jq is not installed, cannot parse JSON response"
+    exit 1
+  fi
+
 
   # Try to read local config file
   if [ -f ".pr-labels" ]; then
