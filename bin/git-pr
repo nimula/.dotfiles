@@ -32,6 +32,7 @@ $(tput bold)OPTIONS$(tput sgr0)
   -H, --head branch   The branch that contains commits for your pull request (default [current branch])
   -n, --no-prompt     Do not prompt for input
   -s, --silent        Silent mode (do not prompt for input)
+  --dry-run           Print commands without executing them
 
   --help              Show this help message
 EOF
@@ -105,10 +106,21 @@ ARGS=()
 ACTION="create"
 DRAFT=false
 NO_PROMPT=false
+DRY_RUN=false
 
 # ==============================================================================
 # Functions
 # ==============================================================================
+
+# Run command with optional dry-run
+function run() {
+  if [[ "$DRY_RUN" = true ]]; then
+    print_default "+ $*"
+  fi
+  if [[ "$DRY_RUN" = false ]]; then
+    "$@"
+  fi
+}
 
 # MARK: CLI Tool Check
 function check_cli_tool() {
@@ -217,6 +229,10 @@ function parser_options() {
       -n|--no-prompt)
         NO_PROMPT=true
         print_info "No prompt mode enabled. No user input will be requested."
+        ;;
+      --dry-run)
+        DRY_RUN=true
+        print_info "Dry-run mode enabled. Commands will not be executed."
         ;;
       -h|--help)
         usage
@@ -542,7 +558,7 @@ EOP
   fi
 
   print_default "Pushing branch $CURRENT_BRANCH to remote..."
-  git push -u origin "$CURRENT_BRANCH"
+  run git push -u origin "$CURRENT_BRANCH"
 
   print_default "Creating PR from $CURRENT_BRANCH to $TARGET_BRANCH..."
 
@@ -550,8 +566,7 @@ EOP
   if [ -n "$PR_LABEL" ]; then
     # Remove possible quotes
     PR_LABEL=$(echo "$PR_LABEL" | tr -d '"')
-    # Ensure label exists
-    ensure_label_exists "$PR_LABEL"
+    run ensure_label_exists "$PR_LABEL"
   fi
 
   # Prepare PR create command
@@ -568,17 +583,24 @@ EOP
   fi
 
   # Execute PR creation command
-  PR_URL=$("${PR_CMD_ARRAY[@]}")
-
-  print_success "PR created: $PR_URL"
-
-  # Extract PR number for later use
-  PR_NUMBER=$(echo $PR_URL | grep -oE '[0-9]+$')
-  if [ -n "$PR_NUMBER" ]; then
-    print_success "PR number: $PR_NUMBER"
+  if [[ "$DRY_RUN" = true ]]; then
+    print_default "+ ${PR_CMD_ARRAY[*]}"
+    print_success "Dry run: PR not created"
+    PR_NUMBER=""
+  else
+    PR_URL=$("${PR_CMD_ARRAY[@]}")
+    print_success "PR created: $PR_URL"
+    PR_NUMBER=$(echo $PR_URL | grep -oE '[0-9]+$')
+    if [ -n "$PR_NUMBER" ]; then
+      print_success "PR number: $PR_NUMBER"
+    fi
   fi
 
-  open_pr "$PR_NUMBER"
+  if [[ "$DRY_RUN" = true ]]; then
+    print_default "+ open_pr \"$PR_NUMBER\""
+  else
+    open_pr "$PR_NUMBER"
+  fi
 }
 
 # MARK: Update PR Summary Function
