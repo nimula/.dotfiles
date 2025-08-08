@@ -71,7 +71,7 @@ function main() {
 # If no branch name is provided, use `main` as the default target branch
 DEFAULT_TARGET_BRANCH="main"
 # Define open ai model
-DEFAULT_MODEL="gpt-4.1"
+DEFAULT_MODEL="gpt-5-mini"
 # Default label configuration
 DEFAULT_LABEL_CONFIG=(
   "build:build"

@@ -41,7 +41,7 @@ if [[ "$COMMIT_SOURCE" == "commit" && -n "$SHA1" ]]; then
 fi
 
 # Define open ai
-MODEL="gpt-4.1"
+MODEL="gpt-5-mini"
 
 read -r -d "" CONVENTIONAL_COMMITS << EOP
 # Conventional commits
