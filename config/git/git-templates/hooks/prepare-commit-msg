@@ -137,8 +137,8 @@ RESPONSE=$(curl -s -w "\n%{http_code}" https://api.openai.com/v1/chat/completion
 {
   "model": "$MODEL",
   "messages": $JSON_PROMPT,
-  "max_completion_tokens": 300,
-  "temperature": 0.4
+  "max_completion_tokens": 500,
+  "top_p": 0.9
 }
 EOF
 )
