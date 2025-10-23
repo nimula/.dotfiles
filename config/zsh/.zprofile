@@ -39,6 +39,8 @@ alias .6='cd ../../../../../../'  # Go back 6 directory levels
 zipf () { zip -r "$1".zip "$@" ; }
 # zipc: To create a clean ZIP archive for a folder
 zipc () { zip -r "$1".zip "$@" -x "*.DS_Store"; }
+# zipx: To create a clean ZIP archive exclude hidden files
+zipx () { zip -r "$1".zip "$@" -x ".*" "*/.*"; }
 # numFiles: Count of non-hidden files in current dir
 alias numFiles='echo $(ls -1 | wc -l)'
 
