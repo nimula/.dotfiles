@@ -34,7 +34,7 @@ function chsh_zsh() {
 
   if [[ "$CURRENT_SHELL" != "$ZSH_PATH" ]]; then
     print_info "Changing default shell to zsh for user $CURRENT_USER..."
-    run chsh -s "$ZSH_PATH"
+    run sudo chsh -s "$ZSH_PATH" "$CURRENT_USER"
   fi
 }
 
