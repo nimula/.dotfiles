@@ -96,6 +96,7 @@ function setup_ssh_default_config() {
   include_line="Include conf.d/nodes/${os_name}.${host_name}.conf"
 
   run install -d -m 700 \
+    "${HOME}/.ssh/conf.d" \
     "${HOME}/.ssh/conf.d/cm" \
     "${HOME}/.ssh/conf.d/envs" \
     "$nodes_dir" \

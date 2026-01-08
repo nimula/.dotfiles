@@ -21,7 +21,7 @@ fi
 
 print_default "Install packages with $PKG_MGR..."
 run sudo $PKG_MGR update -yqq
-run sudo $PKG_MGR install -yq zsh tmux curl
+run sudo $PKG_MGR install -yq zsh tmux curl libpam-ssh-agent-auth
 
 # Clone Tmux Plugin Manager if it isn't already present.
 if [[ ! -d "${HOME}/.tmux/plugins/tpm/" ]]; then
