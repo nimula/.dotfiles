@@ -93,7 +93,7 @@ function setup_ssh_default_config() {
   os_name=$(uname | tr '[:upper:]' '[:lower:]')
   host_name=$(hostname | cut -d . -f 1 | tr '[:upper:]' '[:lower:]')
   node_conf="${nodes_dir}/${os_name}.${host_name}.conf"
-  include_line="Include .ssh/conf.d/nodes/${os_name}.${host_name}.conf"
+  include_line="Include conf.d/nodes/${os_name}.${host_name}.conf"
 
   run install -d -m 700 \
     "${HOME}/.ssh/conf.d/cm" \
