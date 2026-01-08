@@ -72,7 +72,7 @@ function install_rsubl() {
 }
 
 function setup_ssh_default_config() {
-  include_path="${CONFIG_DIR}/ssh/config"
+  include_path="${CONFIG_DIR}/ssh/_commons.conf"
   chmod 600 "$include_path"
 
   if [ "$REMOTE_CONTAINERS" = true ]; then
@@ -85,15 +85,34 @@ function setup_ssh_default_config() {
   # Check if config file exists
   if [ ! -f "$ssh_config" ]; then
     print_default "Creating default SSH config file: $ssh_config"
-    run mkdir -p "${HOME}/.ssh"
+    run install -d -m 700 "${HOME}/.ssh"
     run touch "$ssh_config"
   fi
 
+  nodes_dir="${HOME}/.ssh/conf.d/nodes"
+  os_name=$(uname | tr '[:upper:]' '[:lower:]')
+  host_name=$(hostname | cut -d . -f 1 | tr '[:upper:]' '[:lower:]')
+  node_conf="${nodes_dir}/${os_name}.${host_name}.conf"
+  include_line="Include .ssh/conf.d/nodes/${os_name}.${host_name}.conf"
+
+  run install -d -m 700 \
+    "${HOME}/.ssh/conf.d/cm" \
+    "${HOME}/.ssh/conf.d/envs" \
+    "$nodes_dir" \
+    "${HOME}/.ssh/keys"
+
+  run ln -fnsv "$include_path" "${nodes_dir}/_commons.conf"
+
+  if [ ! -f "$node_conf" ]; then
+    run cp -f "${CONFIG_DIR}/ssh/template.conf" "$node_conf"
+    run chmod 600 "$node_conf"
+  fi
+
   # Check if include line already exists
-  if ! grep -q "Include $include_path" "$ssh_config"; then
+  if ! grep -qF "$include_line" "$ssh_config"; then
     print_default "Added include line to SSH config file"
     temp_file=$(mktemp)
-    run bash -c "printf \"Include %s\n\n\" \"$include_path\" > \"$temp_file\" && cat \"$ssh_config\" >> \"$temp_file\""
+    run bash -c "printf \"%s\n\n\" \"$include_line\" > \"$temp_file\" && cat \"$ssh_config\" >> \"$temp_file\""
     run cp -f "$temp_file" "$ssh_config"
     run chmod 600 "$ssh_config"
     rm $temp_file
