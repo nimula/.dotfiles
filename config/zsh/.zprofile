@@ -14,6 +14,10 @@ case $(uname) in
     if [[ -x /opt/homebrew/bin/brew ]]; then
       eval "$(/opt/homebrew/bin/brew shellenv)"
     fi
+    # Remove the built-in delay on the Caps Lock key in macOS
+    if [[ "$(hidutil property --get "CapsLockDelayOverride" 2>/dev/null)" != "0" ]]; then
+      hidutil property --set '{"CapsLockDelayOverride":0}' >/dev/null 2>&1
+    fi
     ;;
   *)
     ;;
@@ -43,6 +47,24 @@ zipc () { zip -r "$1".zip "$@" -x "*.DS_Store"; }
 zipx () { zip -r "$1".zip "$@" -x ".*" "*/.*"; }
 # numFiles: Count of non-hidden files in current dir
 alias numFiles='echo $(ls -1 | wc -l)'
+
+# set_dir_permissions: Set directory permissions to 755 and file permissions to 644
+set_dir_permissions() {
+  local target_dir="${1:-.}"
+
+  if [ ! -d "$target_dir" ]; then
+    echo "Error: '$target_dir' is not a directory."
+    return 1
+  fi
+
+  echo "Setting directory permissions to 755..."
+  find "$target_dir" -type d -exec chmod 755 {} \;
+
+  echo "Setting file permissions to 644..."
+  find "$target_dir" -type f -exec chmod 644 {} \;
+
+  echo "Done: $target_dir"
+}
 
 #   extract:  Extract most know archives with one command
 #   ---------------------------------------------------------
