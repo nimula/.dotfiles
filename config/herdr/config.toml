@@ -1,0 +1,68 @@
+onboarding = false
+[keys]
+prefix = "ctrl+a"
+
+# --- Tab navigation (≈ tmux window: h/l) ---
+previous_tab = "prefix+H"       # tmux: bind-key h select-window -t :-
+next_tab = "prefix+L"           # tmux: bind-key l select-window -t :+
+switch_tab = "prefix+ctrl+1..9"
+
+focus_pane_left = ["prefix+h", "prefix+left"]
+focus_pane_down = ["prefix+j", "prefix+down"]
+focus_pane_up = ["prefix+k", "prefix+up"]
+focus_pane_right = ["prefix+l", "prefix+right"]
+
+# --- Split panes (reuse literal tmux symbols) ---
+split_horizontal = "prefix+_" # tmux: bind-key _ split-window -v
+split_vertical = "prefix+|"   # tmux: bind-key | split-window -h
+
+# --- Agent navigation ---
+previous_agent = "prefix+p"
+next_agent = "prefix+n"
+focus_agent = "prefix+1..9"
+
+# --- Workspace navigation ---
+switch_workspace = "prefix+shift+1..9"
+
+# --- Custom commands ---
+  [[keys.command]]
+  key = "prefix+alt+g"
+  type = "popup"
+  command = "lazygit"
+  description = "run lazygit"
+  width = "80%"
+  height = "80%"
+
+  [[keys.command]]
+  key = "prefix+t"
+  type = "popup"
+  command = "exec \"${SHELL:-sh}\""
+  description = "open scratch terminal"
+  width = "80%"
+  height = "80%"
+
+[ui]
+show_agent_labels_on_pane_borders = true
+  [ui.sidebar.agents.rows_by_agent]
+  claude = [
+    [
+      "state_icon",
+      "workspace",
+      "tab",
+    ],
+    [
+      "terminal_title_stripped",
+    ],
+    [
+      "agent",
+    ],
+  ]
+
+  [ui.toast]
+  delivery = "system"
+  delay_seconds = 1
+
+[theme]
+name = "terminal"
+
+auto_switch = false

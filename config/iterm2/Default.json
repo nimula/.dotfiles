@@ -21,14 +21,14 @@
   },
   "Right Option Key Sends" : 0,
   "Normal Font" : "SauceCodeProNFM 14",
-  "Transparency" : 0,
+  "Ansi 1 Color" : {
+    "Green Component" : 0,
+    "Blue Component" : 0.3728577196598053,
+    "Red Component" : 0.95683503150939941
+  },
   "Rows" : 30,
   "Default Bookmark" : "No",
-  "Ansi 2 Color" : {
-    "Green Component" : 0.87921047210693359,
-    "Blue Component" : 0.14004382491111755,
-    "Red Component" : 0.59473341703414917
-  },
+  "Custom Directory" : "No",
   "Ansi 4 Color" : {
     "Green Component" : 0.39599207043647766,
     "Blue Component" : 0.99877572059631348,
@@ -92,7 +92,7 @@
   "Non Ascii Font" : "SourceHanSansHWTC-Regular 14",
   "Vertical Spacing" : 1,
   "Use Bold Font" : true,
-  "Option Key Sends" : 0,
+  "Option Key Sends" : 2,
   "Selected Text Color" : {
     "Green Component" : 0.91275316476821899,
     "Blue Component" : 0.88294440507888794,
@@ -156,8 +156,8 @@
     "Blue Component" : 0.10051459074020386,
     "Red Component" : 0.10051589459180832
   },
-  "Guid" : "4C2622CF-600D-46AB-B36C-A23093AD2201",
-  "Custom Directory" : "No",
+  "Transparency" : 0,
+  "Horizontal Spacing" : 1,
   "Ansi 3 Color" : {
     "Green Component" : 0.51805692911148071,
     "Blue Component" : 0.099807053804397583,
@@ -191,10 +191,9 @@
     "Blue Component" : 0.3728577196598053,
     "Red Component" : 0.95683503150939941
   },
-  "Horizontal Spacing" : 1,
-  "Ansi 1 Color" : {
-    "Green Component" : 0,
-    "Blue Component" : 0.3728577196598053,
-    "Red Component" : 0.95683503150939941
+  "Ansi 2 Color" : {
+    "Green Component" : 0.87921047210693359,
+    "Blue Component" : 0.14004382491111755,
+    "Red Component" : 0.59473341703414917
   }
 }
