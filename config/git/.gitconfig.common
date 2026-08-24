@@ -1,0 +1,46 @@
+[alias]
+  info = remote -v
+  co = checkout
+  br = branch -v
+  ci = commit
+  st = status -uno
+  dt = difftool
+  dtb = difftool -b
+  db = diff -b
+  dw = diff -b --word-diff
+  rt = reset --hard
+  unstage = reset HEAD
+  uncommit = reset --soft HEAD^
+  # custom color one line with author
+  l = "log --graph --format=format:'%C(bold blue)%h%C(reset) \
+%C(auto)%s%C(reset) %C(bold yellow)<%an>%C(reset)%C(auto)%d%C(reset)' \
+--abbrev-commit --date=relative"
+  # custom color one line with author and relative author date
+  ld = "log --graph --all --format=format:'%C(bold blue)%h%C(reset) - \
+%C(bold green)(%ar)%C(reset) %C(auto)%s%C(reset) %C(bold yellow)<%an>%C(reset)\
+%C(auto)%d%C(reset)' --abbrev-commit --date=relative"
+  # one line for short
+  ls = log --pretty=one line --abbrev-commit --graph --decorate
+  who = shortlog -n -s --no-merges
+  g = grep -n --color -E
+  # Handy shortcuts for rebasing
+  rc = rebase --continue
+  rs = rebase --skip
+  ra = rebase --abort
+  rh = rebase HEAD
+  sp = stash pop
+  last = log -1 HEAD
+[branch]
+  autosetuprebase = always
+[color]
+  ui = true
+  status = always
+[log]
+  abbrevCommit = true
+[push]
+  default = current
+[pull]
+  rebase = true
+[rebase]
+  autoStash = true
+

@@ -1,0 +1,17 @@
+[alias]
+  # list all alias
+  la = "!git config -l | grep alias | cut -c 7-"
+  # 'git add -u' handles deleted files, but not new files
+  # 'git add .' handles any current and new files, but not deleted
+  # 'git addall' now handles all changes
+  addall = !sh -c 'git add . && git add -u'
+  files = "!f() { git diff --name-status $1^ $1; }; f"
+  snapshot = !git stash save "snapshot: $(date)" && git stash apply "stash@{0}"
+[core]
+  editor = vim
+  excludesfile = ~/.gitignore.global
+  pager = less -x1,5
+  precomposeunicode = true
+[format]
+  # pretty = %C(auto)%h%Creset -%C(auto)%d%Creset %s %C(bold blue)<%an> %Cgreen(%cr)%Creset
+
