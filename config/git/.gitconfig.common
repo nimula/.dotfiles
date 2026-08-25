@@ -28,6 +28,14 @@
   rs = rebase --skip
   ra = rebase --abort
   rh = rebase HEAD
+  wt = worktree
+  wa = worktree add
+  wl = worktree list
+  wo = worktree lock
+  wm = worktree move
+  wp = worktree prune
+  wr = worktree remove
+  wu = worktree unlock
   sp = stash pop
   last = log -1 HEAD
 [branch]
@@ -43,4 +51,3 @@
   rebase = true
 [rebase]
   autoStash = true
-

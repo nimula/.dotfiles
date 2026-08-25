@@ -17,4 +17,3 @@ fi
 
 echo "[WARN] PowerShell was not found. Skipping prepare-commit-msg hook." >&2
 exit 0
-
