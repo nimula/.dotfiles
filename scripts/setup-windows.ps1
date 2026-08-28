@@ -21,6 +21,95 @@ function ConvertTo-GitPath {
   return $Path.Replace("\", "/")
 }
 
+function Initialize-SshDirectory {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Path
+  )
+
+  if ($DryRun) {
+    if (-not (Test-Path -LiteralPath $Path)) {
+      Write-Host "+ create SSH directory $Path"
+    }
+    return
+  }
+
+  if (-not (Test-Path -LiteralPath $Path)) {
+    New-Item -ItemType Directory -Path $Path -Force | Out-Null
+    Write-Success "Created SSH directory $Path"
+  }
+}
+
+function New-SshNodeConfig {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Template,
+
+    [Parameter(Mandatory = $true)]
+    [string]$Destination
+  )
+
+  if (Test-Path -LiteralPath $Destination) {
+    # Migrate node files created by an earlier Windows implementation, which
+    # embedded the repository path directly. Keep every other user edit.
+    $nodeContent = [IO.File]::ReadAllText($Destination)
+    $legacyIncludePattern = '(?im)^(?<indent>\s*)Include\s+"[^"\r\n]*/config/ssh/_commons\.windows\.conf"\s*$'
+    if (-not [Regex]::IsMatch($nodeContent, $legacyIncludePattern)) {
+      return
+    }
+
+    if ($DryRun) {
+      Write-Host "+ migrate SSH common Include in $Destination"
+      return
+    }
+
+    $nodeContent = [Regex]::Replace(
+      $nodeContent,
+      $legacyIncludePattern,
+      [Text.RegularExpressions.MatchEvaluator]{
+        param($match)
+        return "$($match.Groups['indent'].Value)Include                       conf.d/nodes/_commons.conf"
+      }
+    )
+    $utf8WithoutBom = New-Object Text.UTF8Encoding($false)
+    [IO.File]::WriteAllText($Destination, $nodeContent, $utf8WithoutBom)
+    Write-Success "Migrated SSH common Include in $Destination"
+    return
+  }
+
+  $nodeContent = [IO.File]::ReadAllText($Template)
+  $commonIncludePattern = "(?m)^\s*Include\s+conf\.d/nodes/_commons\.conf\s*$"
+  if (-not [Regex]::IsMatch($nodeContent, $commonIncludePattern)) {
+    throw "SSH node template does not contain the expected common Include: $Template"
+  }
+
+  if ($DryRun) {
+    Write-Host "+ create SSH node config $Destination from $Template"
+    return
+  }
+
+  $utf8WithoutBom = New-Object Text.UTF8Encoding($false)
+  [IO.File]::WriteAllText($Destination, $nodeContent, $utf8WithoutBom)
+  Write-Success "Created SSH node config $Destination"
+}
+
+function Set-SshCommonInclude {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Path,
+
+    [Parameter(Mandatory = $true)]
+    [string]$CommonConfig
+  )
+
+  $commonPath = ConvertTo-GitPath $CommonConfig
+  Set-ManagedBlock `
+    -Path $Path `
+    -Name "windows-ssh-common" `
+    -Content "Include `"$commonPath`"" `
+    -DryRun:$DryRun
+}
+
 function Install-OpenSshClient {
   if ($SkipPackageInstall) {
     Write-Info "Skipping OpenSSH Client installation."
@@ -161,14 +250,48 @@ function Set-GitConfig {
 
 function Set-SshConfig {
   $sshCommon = Join-Path $InstallDir "config\ssh\_commons.windows.conf"
-  if (-not (Test-Path -LiteralPath $sshCommon)) {
-    throw "Windows SSH config not found: $sshCommon"
+  $sshTemplate = Join-Path $InstallDir "config\ssh\template.conf"
+  foreach ($requiredPath in @($sshCommon, $sshTemplate)) {
+    if (-not (Test-Path -LiteralPath $requiredPath)) {
+      throw "Windows SSH config source not found: $requiredPath"
+    }
   }
 
   $sshDirectory = Join-Path $HOME ".ssh"
   $sshConfig = Join-Path $sshDirectory "config"
-  $includePath = ConvertTo-GitPath $sshCommon
-  $includeBlock = "Host *`n  Include `"$includePath`""
+  $confDirectory = Join-Path $sshDirectory "conf.d"
+  $nodesDirectory = Join-Path $confDirectory "nodes"
+  $commonInclude = Join-Path $nodesDirectory "_commons.conf"
+  $hostName = ([Net.Dns]::GetHostName().Split(".")[0]).ToLowerInvariant()
+  $nodeFileName = "windows.$hostName.conf"
+  $nodeConfig = Join-Path $nodesDirectory $nodeFileName
+
+  foreach ($directory in @(
+    $sshDirectory,
+    $confDirectory,
+    (Join-Path $confDirectory "cm"),
+    (Join-Path $confDirectory "envs"),
+    $nodesDirectory,
+    (Join-Path $sshDirectory "keys")
+  )) {
+    Initialize-SshDirectory -Path $directory
+  }
+
+  # Keep the repository as the live source so Git updates take effect on the
+  # next SSH invocation. The stable intermediate file also allows InstallDir
+  # to change without overwriting user changes in the node config. Existing
+  # Windows ACL inheritance remains unchanged.
+  Set-SshCommonInclude `
+    -Path $commonInclude `
+    -CommonConfig $sshCommon
+
+  New-SshNodeConfig `
+    -Template $sshTemplate `
+    -Destination $nodeConfig
+
+  # Reset any preceding Host block in an existing config before loading the
+  # managed node. Otherwise an unmatched Host block can suppress the Include.
+  $includeBlock = "Host *`n  Include conf.d/nodes/$nodeFileName"
 
   Set-ManagedBlock `
     -Path $sshConfig `
@@ -187,8 +310,16 @@ function Set-SshConfig {
     return
   }
 
-  $sshOutput = & ssh.exe -G github.com 2>&1
-  if ($LASTEXITCODE -ne 0) {
+  $previousErrorActionPreference = $ErrorActionPreference
+  try {
+    $ErrorActionPreference = "Continue"
+    $sshOutput = & ssh.exe -G github.com 2>&1
+    $sshExitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+  }
+
+  if ($sshExitCode -ne 0) {
     throw "Windows OpenSSH rejected the generated config: $($sshOutput -join [Environment]::NewLine)"
   }
 
