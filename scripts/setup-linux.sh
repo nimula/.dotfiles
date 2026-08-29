@@ -23,6 +23,15 @@ print_default "Install packages with $PKG_MGR..."
 run sudo $PKG_MGR update -yqq
 run sudo $PKG_MGR install -yq zsh tmux curl libpam-ssh-agent-auth
 
+# Install RTK.
+curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh
+
+# Install Herdr.
+curl -fsSL https://herdr.dev/install.sh | sh
+
+# Install Codex.
+curl -fsSL https://chatgpt.com/codex/install.sh | sh
+
 # Clone Tmux Plugin Manager if it isn't already present.
 if [[ ! -d "${HOME}/.tmux/plugins/tpm/" ]]; then
   run git clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm
