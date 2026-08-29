@@ -250,8 +250,9 @@ function Set-GitConfig {
 
 function Set-SshConfig {
   $sshCommon = Join-Path $InstallDir "config\ssh\_commons.windows.conf"
+  $sshContainer = Join-Path $InstallDir "config\ssh\container.conf"
   $sshTemplate = Join-Path $InstallDir "config\ssh\template.conf"
-  foreach ($requiredPath in @($sshCommon, $sshTemplate)) {
+  foreach ($requiredPath in @($sshCommon, $sshContainer, $sshTemplate)) {
     if (-not (Test-Path -LiteralPath $requiredPath)) {
       throw "Windows SSH config source not found: $requiredPath"
     }
@@ -260,8 +261,10 @@ function Set-SshConfig {
   $sshDirectory = Join-Path $HOME ".ssh"
   $sshConfig = Join-Path $sshDirectory "config"
   $confDirectory = Join-Path $sshDirectory "conf.d"
+  $envsDirectory = Join-Path $confDirectory "envs"
   $nodesDirectory = Join-Path $confDirectory "nodes"
   $commonInclude = Join-Path $nodesDirectory "_commons.conf"
+  $personalEnv = Join-Path $envsDirectory "personal"
   $hostName = ([Net.Dns]::GetHostName().Split(".")[0]).ToLowerInvariant()
   $nodeFileName = "windows.$hostName.conf"
   $nodeConfig = Join-Path $nodesDirectory $nodeFileName
@@ -270,11 +273,18 @@ function Set-SshConfig {
     $sshDirectory,
     $confDirectory,
     (Join-Path $confDirectory "cm"),
-    (Join-Path $confDirectory "envs"),
+    $envsDirectory,
     $nodesDirectory,
     (Join-Path $sshDirectory "keys")
   )) {
     Initialize-SshDirectory -Path $directory
+  }
+
+  if ($DryRun) {
+    Write-Host "+ copy SSH environment config from $sshContainer to $personalEnv"
+  } else {
+    Copy-Item -LiteralPath $sshContainer -Destination $personalEnv -Force
+    Write-Success "Installed SSH environment config at $personalEnv"
   }
 
   # Keep the repository as the live source so Git updates take effect on the

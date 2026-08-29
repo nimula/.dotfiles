@@ -73,6 +73,7 @@ function install_rsubl() {
 
 function setup_ssh_default_config() {
   include_path="${CONFIG_DIR}/ssh/_commons.conf"
+  default_container_config="${CONFIG_DIR}/ssh/container.conf"
   chmod 600 "$include_path"
 
   if [ "$REMOTE_CONTAINERS" = true ]; then
@@ -103,6 +104,7 @@ function setup_ssh_default_config() {
     "${HOME}/.ssh/keys"
 
   run ln -fnsv "$include_path" "${nodes_dir}/_commons.conf"
+  run install -m 600 "$default_container_config" "${HOME}/.ssh/conf.d/envs/personal"
 
   if [ ! -f "$node_conf" ]; then
     run cp -f "${CONFIG_DIR}/ssh/template.conf" "$node_conf"
