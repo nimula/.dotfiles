@@ -146,6 +146,73 @@ function setup_config_links() {
   run git config --global init.templatedir "~/${CONFIG_DIR#$HOME/}/git/git-templates"
 }
 
+function setup_agent_config() {
+  local agent_name="$1"
+  local agent_file_name="$2"
+  local shared_configs_dir="${CONFIG_DIR}/agents"
+  local agent_dir="${HOME}/.${agent_name}"
+  local agent_file="${agent_dir}/${agent_file_name}"
+  local temp_file
+  local shared_config_file
+  local reference
+  local found_config=false
+  local has_missing=false
+
+  temp_file=$(mktemp)
+
+  if [ -f "$agent_file" ]; then
+    cp "$agent_file" "$temp_file"
+  fi
+
+  for shared_config_file in "${shared_configs_dir}"/*.md; do
+    if [ -f "$shared_config_file" ]; then
+      found_config=true
+      reference="@$shared_config_file"
+
+      if ! grep -Fqx "$reference" "$temp_file"; then
+        if [ -s "$temp_file" ] && [ -n "$(tail -c 1 "$temp_file")" ]; then
+          printf '\n' >> "$temp_file"
+        fi
+        printf '%s\n' "$reference" >> "$temp_file"
+        has_missing=true
+      fi
+    fi
+  done
+
+  if [ "$found_config" = false ]; then
+    print_warning "No agent configuration files found in $shared_configs_dir"
+    rm "$temp_file"
+    return 0
+  fi
+
+  if [ "$has_missing" = false ]; then
+    print_default "$agent_name configuration is already installed."
+    rm "$temp_file"
+    return 0
+  fi
+
+  print_default "Installing $agent_name configuration: $agent_file"
+  run install -d -m 700 "$agent_dir"
+  run install -m 600 "$temp_file" "$agent_file"
+  rm "$temp_file"
+}
+
+function setup_agent_configs() {
+  local agent_configs=(
+    "codex|AGENTS.md"
+  )
+  local agent_config
+  local agent_name
+  local agent_file_name
+
+  for agent_config in "${agent_configs[@]}"; do
+    agent_name="${agent_config%%|*}"
+    agent_file_name="${agent_config#*|}"
+
+    setup_agent_config "$agent_name" "$agent_file_name"
+  done
+}
+
 function setup_bin_links() {
   print_default "Linked bin files to home directory."
   # Ensure the local bin directory exists
@@ -196,6 +263,7 @@ function main() {
   install_rsubl
   install_zim
   setup_config_links
+  setup_agent_configs
   setup_zim
   setup_bin_links
 }
