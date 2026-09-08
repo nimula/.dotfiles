@@ -41,6 +41,12 @@ function Set-AgentConfig {
     Get-ChildItem -LiteralPath $sharedConfigsDirectory -Filter "*.md" -File |
       Sort-Object -Property Name
   )
+  $agentConfigsDirectory = Join-Path $sharedConfigsDirectory $AgentName
+  $orchestrateFile = Join-Path $agentConfigsDirectory "ORCHESTRATE.md"
+  if (Test-Path -LiteralPath $orchestrateFile -PathType Leaf) {
+    $sharedConfigFiles += Get-Item -LiteralPath $orchestrateFile
+  }
+
   if ($sharedConfigFiles.Count -eq 0) {
     Write-WarningMessage "No agent configuration files found in $sharedConfigsDirectory"
     return

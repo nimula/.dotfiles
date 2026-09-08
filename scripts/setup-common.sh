@@ -150,10 +150,12 @@ function setup_agent_config() {
   local agent_name="$1"
   local agent_file_name="$2"
   local shared_configs_dir="${CONFIG_DIR}/agents"
+  local orchestrate_file="${shared_configs_dir}/${agent_name}/ORCHESTRATE.md"
   local agent_dir="${HOME}/.${agent_name}"
   local agent_file="${agent_dir}/${agent_file_name}"
   local temp_file
-  local shared_config_file
+  local config_file
+  local config_files=("${shared_configs_dir}"/*.md)
   local reference
   local found_config=false
   local has_missing=false
@@ -164,10 +166,14 @@ function setup_agent_config() {
     cp "$agent_file" "$temp_file"
   fi
 
-  for shared_config_file in "${shared_configs_dir}"/*.md; do
-    if [ -f "$shared_config_file" ]; then
+  if [ -f "$orchestrate_file" ]; then
+    config_files+=("$orchestrate_file")
+  fi
+
+  for config_file in "${config_files[@]}"; do
+    if [ -f "$config_file" ]; then
       found_config=true
-      reference="@$shared_config_file"
+      reference="@$config_file"
 
       if ! grep -Fqx "$reference" "$temp_file"; then
         if [ -s "$temp_file" ] && [ -n "$(tail -c 1 "$temp_file")" ]; then
