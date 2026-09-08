@@ -55,11 +55,9 @@ function Set-AgentConfig {
   $agentDirectory = Join-Path $HOME ".$AgentName"
   $agentFile = Join-Path $agentDirectory $FileName
   $existingContent = ""
-  $existingLines = @()
 
   if (Test-Path -LiteralPath $agentFile -PathType Leaf) {
     $existingContent = [IO.File]::ReadAllText($agentFile)
-    $existingLines = @([IO.File]::ReadAllLines($agentFile))
   }
 
   $references = @(
@@ -67,25 +65,30 @@ function Set-AgentConfig {
       "@$(ConvertTo-GitPath -Path $_.FullName)"
     }
   )
-  $normalizedExistingLines = @(
-    $existingLines | ForEach-Object { $_.Replace("\", "/") }
+  $bodyContent = [Regex]::Replace(
+    $existingContent,
+    '(?m)^(?<line>[^\r\n]+)(?<newline>\r\n|\n|\r|$)',
+    [Text.RegularExpressions.MatchEvaluator]{
+      param($match)
+      $normalizedLine = $match.Groups["line"].Value.Replace("\", "/")
+      if ($references -contains $normalizedLine) {
+        return ""
+      }
+      return $match.Value
+    }
   )
-  $missingReferences = @(
-    $references | Where-Object { $normalizedExistingLines -cnotcontains $_ }
-  )
+  $newlineMatch = [Regex]::Match($existingContent, '\r\n|\n|\r')
+  $newline = if ($newlineMatch.Success) {
+    $newlineMatch.Value
+  } else {
+    [Environment]::NewLine
+  }
+  $updatedContent = ($references -join $newline) + $newline + $bodyContent
 
-  if ($missingReferences.Count -eq 0) {
+  if ($updatedContent -ceq $existingContent) {
     Write-Info "$AgentName configuration is already installed."
     return
   }
-
-  $newline = [Environment]::NewLine
-  $separator = if ([string]::IsNullOrEmpty($existingContent) -or $existingContent.EndsWith("`n")) {
-    ""
-  } else {
-    $newline
-  }
-  $updatedContent = "$existingContent$separator$($missingReferences -join $newline)$newline"
 
   if ($DryRun) {
     Write-Host "+ install $AgentName configuration at $agentFile"
