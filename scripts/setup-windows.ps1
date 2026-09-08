@@ -21,6 +21,99 @@ function ConvertTo-GitPath {
   return $Path.Replace("\", "/")
 }
 
+function Set-AgentConfig {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$AgentName,
+
+    [Parameter(Mandatory = $true)]
+    [string]$FileName
+  )
+
+  $sharedConfigsDirectory = Join-Path $InstallDir "config\agents"
+  if (-not (Test-Path -LiteralPath $sharedConfigsDirectory -PathType Container)) {
+    Write-WarningMessage "Agent configuration directory not found: $sharedConfigsDirectory"
+    return
+  }
+
+  $sharedConfigFiles = @(
+    Get-ChildItem -LiteralPath $sharedConfigsDirectory -Filter "*.md" -File |
+      Sort-Object -Property Name
+  )
+  if ($sharedConfigFiles.Count -eq 0) {
+    Write-WarningMessage "No agent configuration files found in $sharedConfigsDirectory"
+    return
+  }
+
+  $agentDirectory = Join-Path $HOME ".$AgentName"
+  $agentFile = Join-Path $agentDirectory $FileName
+  $existingContent = ""
+  $existingLines = @()
+
+  if (Test-Path -LiteralPath $agentFile -PathType Leaf) {
+    $existingContent = [IO.File]::ReadAllText($agentFile)
+    $existingLines = @([IO.File]::ReadAllLines($agentFile))
+  }
+
+  $references = @(
+    $sharedConfigFiles | ForEach-Object {
+      "@$(ConvertTo-GitPath -Path $_.FullName)"
+    }
+  )
+  $normalizedExistingLines = @(
+    $existingLines | ForEach-Object { $_.Replace("\", "/") }
+  )
+  $missingReferences = @(
+    $references | Where-Object { $normalizedExistingLines -cnotcontains $_ }
+  )
+
+  if ($missingReferences.Count -eq 0) {
+    Write-Info "$AgentName configuration is already installed."
+    return
+  }
+
+  $newline = [Environment]::NewLine
+  $separator = if ([string]::IsNullOrEmpty($existingContent) -or $existingContent.EndsWith("`n")) {
+    ""
+  } else {
+    $newline
+  }
+  $updatedContent = "$existingContent$separator$($missingReferences -join $newline)$newline"
+
+  if ($DryRun) {
+    Write-Host "+ install $AgentName configuration at $agentFile"
+    return
+  }
+
+  if (-not (Test-Path -LiteralPath $agentDirectory)) {
+    New-Item -ItemType Directory -Path $agentDirectory -Force | Out-Null
+  }
+
+  $utf8WithoutBom = New-Object Text.UTF8Encoding($false)
+  [IO.File]::WriteAllText($agentFile, $updatedContent, $utf8WithoutBom)
+  Write-Success "Installed $AgentName configuration at $agentFile"
+}
+
+function Set-AgentConfigs {
+  $agentConfigs = @(
+    @{
+      AgentName = "codex"
+      FileName = "AGENTS.md"
+    }
+    # @{
+    #   AgentName = "claude"
+    #   FileName = "CLAUDE.md"
+    # }
+  )
+
+  foreach ($agentConfig in $agentConfigs) {
+    Set-AgentConfig `
+      -AgentName $agentConfig.AgentName `
+      -FileName $agentConfig.FileName
+  }
+}
+
 function Initialize-SshDirectory {
   param(
     [Parameter(Mandatory = $true)]
@@ -346,6 +439,7 @@ function Main {
 
   Install-OpenSshClient
   Set-PowerShellProfile
+  Set-AgentConfigs
   Set-GitConfig
   Set-SshConfig
 
