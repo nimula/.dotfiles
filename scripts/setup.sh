@@ -82,6 +82,7 @@ function main() {
   run_with_env "$CURR_DIR/setup-linux.sh"
   run_with_env "$CURR_DIR/setup-homebrew.sh"
   run_with_env "$CURR_DIR/setup-common.sh"
+  run_with_env "$CURR_DIR/setup-agents.sh"
   run_with_env "$CURR_DIR/setup-mac.sh"
 
   print_success "Done."

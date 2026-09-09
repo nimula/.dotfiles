@@ -146,85 +146,6 @@ function setup_config_links() {
   run git config --global init.templatedir "~/${CONFIG_DIR#$HOME/}/git/git-templates"
 }
 
-function setup_agent_config() (
-  local agent_name="$1"
-  local agent_file_name="$2"
-  local shared_configs_dir="${CONFIG_DIR}/agents"
-  local orchestrate_file="${shared_configs_dir}/${agent_name}/ORCHESTRATE.md"
-  local agent_dir="${HOME}/.${agent_name}"
-  local agent_file="${agent_dir}/${agent_file_name}"
-  local temp_dir
-  local references_file
-  local output_file
-  local config_file
-  local config_files=()
-
-  for config_file in "${shared_configs_dir}"/*.md; do
-    if [ -f "$config_file" ]; then
-      config_files+=("$config_file")
-    fi
-  done
-  if [ -f "$orchestrate_file" ]; then
-    config_files+=("$orchestrate_file")
-  fi
-
-  if [ "${#config_files[@]}" -eq 0 ]; then
-    print_warning "No agent configuration files found in $shared_configs_dir"
-    return 0
-  fi
-
-  temp_dir=$(mktemp -d)
-  trap 'rm -rf "$temp_dir"' EXIT
-  references_file="${temp_dir}/references"
-  output_file="${temp_dir}/output"
-
-  for config_file in "${config_files[@]}"; do
-    printf '@%s\n' "$config_file" >> "$references_file"
-  done
-  cp "$references_file" "$output_file"
-
-  if [ -f "$agent_file" ]; then
-    awk '
-      NR == FNR {
-        references[$0] = 1
-        next
-      }
-      {
-        line = $0
-        sub(/\r$/, "", line)
-        if (!(line in references)) {
-          print
-        }
-      }
-    ' "$references_file" "$agent_file" >> "$output_file"
-
-    if cmp -s "$output_file" "$agent_file"; then
-      print_default "$agent_name configuration is already installed."
-      return 0
-    fi
-  fi
-
-  print_default "Installing $agent_name configuration: $agent_file"
-  run install -d -m 700 "$agent_dir"
-  run install -m 600 "$output_file" "$agent_file"
-)
-
-function setup_agent_configs() {
-  local agent_configs=(
-    "codex|AGENTS.md"
-  )
-  local agent_config
-  local agent_name
-  local agent_file_name
-
-  for agent_config in "${agent_configs[@]}"; do
-    agent_name="${agent_config%%|*}"
-    agent_file_name="${agent_config#*|}"
-
-    setup_agent_config "$agent_name" "$agent_file_name"
-  done
-}
-
 function setup_bin_links() {
   print_default "Linked bin files to home directory."
   # Ensure the local bin directory exists
@@ -275,7 +196,6 @@ function main() {
   install_rsubl
   install_zim
   setup_config_links
-  setup_agent_configs
   setup_zim
   setup_bin_links
 }

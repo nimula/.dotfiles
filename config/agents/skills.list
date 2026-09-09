@@ -1,0 +1,5 @@
+# Format: <repo_url>[|<skill_dir>...]. Omit skill directories to install all discovered skills.
+https://github.com/poteto/how.git
+https://github.com/Raymondhou0917/speak-human-tw.git
+https://github.com/mattpocock/skills.git
+https://github.com/anthropics/skills.git|skills/frontend-design|skills/theme-factory/SKILL.md
