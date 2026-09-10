@@ -54,16 +54,65 @@ function Set-AgentConfig {
 
   $agentDirectory = Join-Path $HOME ".$AgentName"
   $agentFile = Join-Path $agentDirectory $FileName
+  $instructionsDirectory = Join-Path $agentDirectory "instructions"
+  $destinationFiles = @(
+    $sharedConfigFiles | ForEach-Object { Join-Path $instructionsDirectory $_.Name }
+  )
+
+  # Validate all destinations before writing; never follow an existing link.
+  foreach ($directory in @($agentDirectory, $instructionsDirectory)) {
+    $item = Get-Item -LiteralPath $directory -Force -ErrorAction SilentlyContinue
+    if ($null -ne $item -and (
+      -not $item.PSIsContainer -or
+      ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)
+    )) {
+      throw "Agent configuration directory must be a regular directory: $directory"
+    }
+  }
+  foreach ($destination in @($agentFile) + $destinationFiles) {
+    $item = Get-Item -LiteralPath $destination -Force -ErrorAction SilentlyContinue
+    if ($null -ne $item -and (
+      $item.PSIsContainer -or
+      ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+      $item.LinkType
+    )) {
+      throw "Agent configuration destination must be a regular file: $destination"
+    }
+  }
+
+  $utf8WithoutBom = New-Object Text.UTF8Encoding($false)
+  foreach ($sourceFile in $sharedConfigFiles) {
+    $destination = Join-Path $instructionsDirectory $sourceFile.Name
+    $sourceContent = [IO.File]::ReadAllText($sourceFile.FullName)
+    if ((Test-Path -LiteralPath $destination -PathType Leaf) -and
+      [IO.File]::ReadAllText($destination) -ceq $sourceContent) {
+      continue
+    }
+    if ($DryRun) {
+      Write-Host "+ sync agent instructions at $destination"
+      continue
+    }
+    if (-not (Test-Path -LiteralPath $instructionsDirectory)) {
+      New-Item -ItemType Directory -Path $instructionsDirectory -Force | Out-Null
+    }
+    # Write a physical copy that inherits destination permissions, not source ACLs.
+    [IO.File]::WriteAllText($destination, $sourceContent, $utf8WithoutBom)
+    Write-Success "Synced agent instructions at $destination"
+  }
+
   $existingContent = ""
 
   if (Test-Path -LiteralPath $agentFile -PathType Leaf) {
     $existingContent = [IO.File]::ReadAllText($agentFile)
   }
 
-  $references = @(
+  $legacyReferences = @(
     $sharedConfigFiles | ForEach-Object {
       "@$(ConvertTo-GitPath -Path $_.FullName)"
     }
+  )
+  $references = @(
+    $destinationFiles | ForEach-Object { "@$(ConvertTo-GitPath -Path $_)" }
   )
   $bodyContent = [Regex]::Replace(
     $existingContent,
@@ -71,7 +120,7 @@ function Set-AgentConfig {
     [Text.RegularExpressions.MatchEvaluator]{
       param($match)
       $normalizedLine = $match.Groups["line"].Value.Replace("\", "/")
-      if ($references -contains $normalizedLine) {
+      if ($references -contains $normalizedLine -or $legacyReferences -contains $normalizedLine) {
         return ""
       }
       return $match.Value
