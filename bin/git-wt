@@ -1,377 +1,327 @@
 #!/usr/bin/env zsh
 # Author : nimula+github@gmail.com
-#
+
 set -Eeuo pipefail
 
-source print_utils.sh
+source "${0:A:h}/print_utils.sh"
+typeset -a WT_PATHS WT_BRANCHES WT_HEADS WT_BARES TARGET_PATHS
 
+function error() { print_error "$*" >&2; }
 
 function usage() {
-  setopt local_options posix_argzero
-
-  cat <<EOF
+  cat <<'EOF'
 Git worktree management with organized directory structure.
 
-$(tput bold)USAGE$(tput sgr0)
-  $(tput bold; tput setaf 74)$(basename "$0") <command> [augments] [options]$(tput sgr0)
+Usage: git-wt <command> [arguments]
 
-$(tput bold)COMMAND$(tput sgr0)
-  switch, sw <branch>           Switch to a branch in new worktree
-  create <branch> [base]        Create new branch in worktree (default: main/master)
-  list, ls                      List all worktrees
-  remove, rm [-f] <ref|pattern> Remove by branch, detached HEAD SHA, or pattern
-  prune                         Remove worktree administrative files
-  shellenv                      Output shell function for auto-cd (source this)
+Commands:
+  init [repository [directory]]  Clone as a bare container, or migrate this repo
+  switch, sw, checkout, co <branch>
+  create <branch> [base]
+  list, ls
+  remove, rm [-f] [-s] <ref|pattern>
+  prune
+  shellenv
 
-$(tput bold)OPTIONS$(tput sgr0)
-  -f, --force         For remove: drop a worktree with uncommitted
-                      changes, and skip confirmation for patterns or
-                      shared SHAs. Repeat it (-f -f) to remove
-                      a locked worktree, as git itself requires.
-  -s, --silent        Silent mode (do not prompt for input)
-  -h, --help          Show this help message
-
-Setup auto-cd:
-  Add to ~/.bashrc or ~/.zshrc:
-    source <(git-wt shellenv)
-
-Worktrees are organized at: $PWD$/<repo>/<branch>
+Load auto-cd and completion with:
+  source <(git-wt shellenv)
 EOF
 }
 
-  # wt = worktree
-  # wa = worktree add
-  # wl = worktree list
-  # wo = worktree lock
-  # wm = worktree move
-  # wp = worktree prune
-  # wr = worktree remove
-  # wu = worktree unlock
-
-function main() {
-  local command
-  if [ $# -eq 0 ]; then
-    command="list"
-  else
-    command="$1"
-    shift
-  fi
-
-
-  case "$command" in
-    init)
-      init $@
-      ;;
-    checkout|co|switch|sw)
-      switch $@
-      ;;
-    create)
-      create $@
-      ;;
-    list|ls)
-      list $@
-      ;;
-    remove|rm)
-      remove $@
-      ;;
-    prune)
-      prune $@
-      ;;
-    shellenv)
-      shellenv $@
-      ;;
-    help|--help|-h)
-        usage
-        ;;
-    *)
-      print_error "Unknown command: $command"
-      usage
-      exit 1
-      ;;
-  esac
+function require_no_newline() {
+  [[ "$1" != *$'\n'* ]] || { error "Paths and branch names containing newlines are not supported."; return 1; }
 }
 
+function read_worktrees() {
+  WT_PATHS=(); WT_BRANCHES=(); WT_HEADS=(); WT_BARES=()
+  local field wt_path='' branch='' head='' bare=false
+  while IFS= read -r -d '' field; do
+    if [[ -z "$field" ]]; then
+      [[ -n "$wt_path" ]] || continue
+      WT_PATHS+=("$wt_path"); WT_BRANCHES+=("$branch"); WT_HEADS+=("$head"); WT_BARES+=("$bare")
+      wt_path=''; branch=''; head=''; bare=false
+    elif [[ "$field" == worktree\ * ]]; then
+      if [[ -n "$wt_path" ]]; then
+        WT_PATHS+=("$wt_path"); WT_BRANCHES+=("$branch"); WT_HEADS+=("$head"); WT_BARES+=("$bare")
+        branch=''; head=''; bare=false
+      fi
+      wt_path="${field#worktree }"
+    elif [[ "$field" == HEAD\ * ]]; then head="${field#HEAD }"
+    elif [[ "$field" == branch\ refs/heads/* ]]; then branch="${field#branch refs/heads/}"
+    elif [[ "$field" == bare ]]; then bare=true
+    fi
+  done < <(command git worktree list --porcelain -z)
+  [[ -z "$wt_path" ]] || { WT_PATHS+=("$wt_path"); WT_BRANCHES+=("$branch"); WT_HEADS+=("$head"); WT_BARES+=("$bare"); }
+  return 0
+}
+
+function common_dir() { command git rev-parse --path-format=absolute --git-common-dir 2>/dev/null; }
+function container_root() {
+  local common
+  common="$(common_dir)" || return 1
+  print -r -- "${common:h}"
+}
+function managed_container() {
+  local root="$(container_root)" || return 1
+  [[ -d "$root/.git" && "$(command git --git-dir="$root/.git" rev-parse --is-bare-repository 2>/dev/null)" == true ]]
+}
+function require_managed_container() {
+  managed_container || { error "This is not a git-wt bare container. Run 'git-wt init' from the repository root first."; return 1; }
+}
+
+function branch_destination() {
+  local branch="$1" root candidate part current
+  require_no_newline "$branch" || return 1
+  command git check-ref-format --branch "$branch" >/dev/null 2>&1 || { error "Invalid branch name: $branch"; return 1; }
+  root="$(container_root)" || return 1
+  root="$(cd "$root" && pwd -P)" || return 1
+  require_no_newline "$root" || return 1
+  candidate="$root/$branch"; current="$root"
+  local -a parts; parts=("${(@s:/:)branch}")
+  for part in "${parts[@]}"; do
+    current="$current/$part"
+    [[ ! -L "$current" ]] || { error "Refusing a worktree path through symlink: $current"; return 1; }
+  done
+  [[ ! -e "$candidate" && ! -L "$candidate" ]] || { error "Worktree destination already exists: $candidate"; return 1; }
+  print -r -- "$candidate"
+}
+function emit_cd() { require_no_newline "$1" && print -r -- "GIT_WT_CD:$1"; }
+
 function init() {
-  print_info "Initializing worktree management..."
-  # TODO: 如果有帶入參數，則使用參數作為 clone 的目標，然後使用 bare clone
-  # TODO: 如果沒有帶入參數，則遷移目前的 repo 成為 bare repo，並且保留包含未追蹤的檔案在內的資料
+  [[ "${1:-}" == -- ]] && shift
+  if [[ $# -eq 0 ]]; then git_migrate_bare; return $?; fi
+  [[ $# -le 2 ]] || { error "Usage: git-wt init <repository> [directory]"; return 1; }
+  local repository="$1" destination source_name default_ref default_branch worktree_path
+  if [[ $# -eq 2 ]]; then destination="$2"
+  else source_name="${${repository%/}:t}"; destination="${source_name%.git}"
+  fi
+  [[ -n "$destination" ]] || { error "Cannot derive a destination directory."; return 1; }
+  require_no_newline "$destination" || return 1
+  require_no_newline "$(pwd -P)" || return 1
+  [[ ! -e "$destination" && ! -L "$destination" ]] || { error "Destination already exists: $destination"; return 1; }
+  if ! command git clone --bare "$repository" "$destination/.git"; then
+    error "Clone failed. Any partial directory was left at: $destination"; return 1
+  fi
+  if ! command git --git-dir="$destination/.git" config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*' ||
+     ! command git --git-dir="$destination/.git" fetch origin; then
+    error "Fetch failed. Inspect or remove the incomplete directory: $destination"; return 1
+  fi
+  if ! command git --git-dir="$destination/.git" remote set-head origin --auto; then
+    error "The repository has no remote default branch or no checkoutable commit. Directory kept: $destination"; return 1
+  fi
+  default_ref="$(command git --git-dir="$destination/.git" symbolic-ref -q refs/remotes/origin/HEAD)" || { error "Could not determine origin's default branch. Directory kept: $destination"; return 1; }
+  default_branch="${default_ref#refs/remotes/origin/}"
+  if ! command git --git-dir="$destination/.git" show-ref --verify --quiet "refs/heads/$default_branch"; then
+    command git --git-dir="$destination/.git" branch "$default_branch" "origin/$default_branch" || return 1
+  fi
+  worktree_path="$destination/$default_branch"
+  require_no_newline "$worktree_path" || return 1
+  command git --git-dir="$destination/.git" worktree add "$worktree_path" "$default_branch" || { error "Could not create the initial worktree. Directory kept: $destination"; return 1; }
+  command git -C "$worktree_path" branch --set-upstream-to="origin/$default_branch" "$default_branch" || { error "Initial worktree was created, but upstream setup failed: $worktree_path"; return 1; }
+  print_success "Initialized bare container: $destination"
+  emit_cd "$(cd "$worktree_path" && pwd -P)"
 }
 
 function switch() {
-  print_info "Switching worktree..."
-  local branch="${1:?Branch name required. Usage: git-wt switch <branch>}"
-  # TODO: add worktree if branch does not exist, otherwise switch to existing worktree
+  [[ "${1:-}" == -- ]] && shift
+  [[ $# -eq 1 ]] || { error "Usage: git-wt switch <branch>"; return 1; }
+  local branch="$1" destination index
+  require_managed_container || return 1; require_no_newline "$branch" || return 1
+  command git check-ref-format --branch "$branch" >/dev/null 2>&1 || { error "Invalid branch name: $branch"; return 1; }
+  read_worktrees
+  for index in {1..${#WT_PATHS}}; do
+    if [[ "${WT_BRANCHES[index]}" == "$branch" ]]; then
+      [[ -d "${WT_PATHS[index]}" ]] || { error "Git registers this worktree, but its path is missing: ${WT_PATHS[index]}"; return 1; }
+      emit_cd "${WT_PATHS[index]}"; return 0
+    fi
+  done
+  destination="$(branch_destination "$branch")" || return 1
+  if command git show-ref --verify --quiet "refs/heads/$branch"; then command git worktree add "$destination" "$branch"
+  elif command git show-ref --verify --quiet "refs/remotes/origin/$branch"; then command git worktree add --track -b "$branch" "$destination" "origin/$branch"
+  else error "Branch '$branch' does not exist. Use 'git-wt create $branch' to create it."; return 1
+  fi || return 1
+  emit_cd "$(cd "$destination" && pwd -P)"
 }
 
+function default_base() {
+  local ref="$(command git symbolic-ref -q refs/remotes/origin/HEAD 2>/dev/null || true)"
+  if [[ -n "$ref" ]]; then print -r -- "origin/${ref#refs/remotes/origin/}"
+  elif command git show-ref --verify --quiet refs/heads/main; then print -r -- main
+  elif command git show-ref --verify --quiet refs/heads/master; then print -r -- master
+  else return 1; fi
+}
 function create() {
-  print_info "Creating worktree..."
-  local branch="${1:?Branch name required. Usage: git-wt create <branch>}"
-  # TODO: create a new worktree for the specified branch, optionally based on a base branch
+  [[ "${1:-}" == -- ]] && shift
+  [[ $# -ge 1 && $# -le 2 ]] || { error "Usage: git-wt create <branch> [base]"; return 1; }
+  local branch="$1" base="${2:-}" destination
+  require_managed_container || return 1; require_no_newline "$branch" || return 1
+  command git check-ref-format --branch "$branch" >/dev/null 2>&1 || { error "Invalid branch name: $branch"; return 1; }
+  command git show-ref --verify --quiet "refs/heads/$branch" && { error "Branch already exists: $branch"; return 1; }
+  [[ -n "$base" ]] || base="$(default_base)" || { error "Provide a base branch; origin/HEAD, main, and master are unavailable."; return 1; }
+  command git rev-parse --verify -q "${base}^{commit}" >/dev/null || { error "Base is not a commit: $base"; return 1; }
+  destination="$(branch_destination "$branch")" || return 1
+  command git worktree add -b "$branch" "$destination" "$base" || return 1
+  emit_cd "$(cd "$destination" && pwd -P)"
 }
 
-function list() {
-  git worktree list
+function list() { [[ $# -eq 0 ]] || { error "Usage: git-wt list"; return 1; }; command git worktree list; }
+function current_worktree_path() {
+  local root
+  root="$(command git rev-parse --show-toplevel 2>/dev/null)" || return 1
+  cd "$root" && pwd -P
 }
-
+function find_remove_targets() {
+  local query="$1" index resolved=''; TARGET_PATHS=()
+  for index in {1..${#WT_PATHS}}; do [[ "${WT_BARES[index]}" == false && "${WT_BRANCHES[index]}" == "$query" ]] && TARGET_PATHS+=("${WT_PATHS[index]}"); done
+  [[ ${#TARGET_PATHS} -gt 0 ]] && return 0
+  resolved="$(command git rev-parse --verify -q "${query}^{commit}" 2>/dev/null || true)"
+  if [[ -n "$resolved" ]]; then
+    for index in {1..${#WT_PATHS}}; do [[ "${WT_BARES[index]}" == false && -z "${WT_BRANCHES[index]}" && "${WT_HEADS[index]}" == "$resolved" ]] && TARGET_PATHS+=("${WT_PATHS[index]}"); done
+  fi
+  [[ ${#TARGET_PATHS} -gt 0 ]] && return 0
+  for index in {1..${#WT_PATHS}}; do
+    [[ "${WT_BARES[index]}" == false ]] || continue
+    if [[ -n "${WT_BRANCHES[index]}" && "${WT_BRANCHES[index]}" == ${~query} ]] || [[ -z "${WT_BRANCHES[index]}" && "${WT_HEADS[index]}" == ${~query} ]]; then TARGET_PATHS+=("${WT_PATHS[index]}"); fi
+  done
+  [[ ${#TARGET_PATHS} -gt 0 ]]
+}
 function remove() {
-  print_info "Removing worktree..."
-  # TODO: remove the specified worktree by branch name, detached HEAD SHA, or pattern
+  local force_count=0 silent=false query='' argument current target rc=0 exact_branch=false primary='' index
+  while [[ $# -gt 0 ]]; do
+    argument="$1"; shift
+    case "$argument" in
+      -f|--force) (( force_count += 1 ));; -ff) force_count=2;; -s|--silent) silent=true;;
+      --) [[ $# -gt 0 ]] || { error "Remove target required."; return 1; }; query="$1"; shift; break;;
+      -*) error "Unknown remove option: $argument"; return 1;; *) query="$argument"; break;;
+    esac
+  done
+  [[ -n "$query" && $# -eq 0 ]] || { error "Usage: git-wt remove [-f] [-s] <ref|pattern>"; return 1; }
+  read_worktrees; find_remove_targets "$query" || { error "No removable worktree matches: $query"; return 1; }
+  for index in {1..${#WT_PATHS}}; do [[ "${WT_BARES[index]}" == false ]] && { primary="${WT_PATHS[index]}"; break; }; done
+  current="$(current_worktree_path 2>/dev/null || true)"
+  for target in "${TARGET_PATHS[@]}"; do
+    if [[ "$target" == "$primary" || ( -n "$current" && "$target" == "$current" ) ]]; then error "Refusing to remove protected worktree: $target"; return 1; fi
+  done
+  command git show-ref --verify --quiet "refs/heads/$query" && exact_branch=true
+  if [[ ( ${#TARGET_PATHS} -ne 1 || "$exact_branch" != true ) && $force_count -eq 0 ]]; then
+    print -r -- "Matched worktrees:"; for target in "${TARGET_PATHS[@]}"; do print -r -- "  $target"; done
+    if [[ "$silent" == true || ! -t 0 ]]; then error "Confirmation is required; use -f to continue without prompting."; return 1; fi
+    local answer; print -n -- "Remove these worktrees? [y/N] "; read -r answer
+    [[ "$answer" == [yY] || "$answer" == [yY][eE][sS] ]] || return 1
+  fi
+  local -a force_args; force_args=(); while (( force_count > 0 )); do force_args+=(-f); force_count=$(( force_count - 1 )); done
+  for target in "${TARGET_PATHS[@]}"; do command git worktree remove "${force_args[@]}" "$target" || rc=1; done
+  return $rc
 }
-
-function prune() {
-  print_info "Pruning worktrees..."
-}
-
-function prune() {
-  git worktree prune
-  echo "✓ Pruned stale worktree administrative files"
-}
+function prune() { [[ $# -eq 0 ]] || { error "Usage: git-wt prune"; return 1; }; command git worktree prune && print_success "Pruned stale worktree administrative files"; }
 
 function shellenv() {
-  # TODO: output shell function for auto-cd into worktree directories
+  cat <<'EOF'
+git-wt() {
+  local _git_wt_output _git_wt_status _git_wt_marker _git_wt_line
+  if _git_wt_output="$(command git-wt "$@")"; then _git_wt_status=0; else _git_wt_status=$?; fi
+  _git_wt_marker=''
+  while IFS= read -r _git_wt_line; do
+    case "$_git_wt_line" in GIT_WT_CD:*) _git_wt_marker="${_git_wt_line#GIT_WT_CD:}";; *) printf '%s\n' "$_git_wt_line";; esac
+  done <<< "$_git_wt_output"
+  (( _git_wt_status == 0 )) || return "$_git_wt_status"
+  [[ -z "$_git_wt_marker" ]] || cd -- "$_git_wt_marker" || return $?
+}
+git() { if [[ "${1:-}" == wt ]]; then shift; git-wt "$@"; else command git "$@"; fi; }
+_git_wt_refs() { command git for-each-ref --format='%(refname:short)' refs/heads refs/remotes/origin 2>/dev/null | sed -e '/^origin\/HEAD$/d' -e 's/^origin\///' | awk '!seen[$0]++'; }
+_git_wt_base_refs() { command git for-each-ref --format='%(refname:short)' refs/heads refs/remotes/origin 2>/dev/null | sed '/^origin\/HEAD$/d' | awk '!seen[$0]++'; }
+_git_wt_remove_refs() {
+  command git worktree list --porcelain -z 2>/dev/null | tr '\0' '\n' |
+    awk '
+      function emit() { if (!bare) { if (branch != "") print branch; else if (head != "") print head } }
+      /^worktree / { next }
+      /^HEAD / { head=$2; next }
+      /^branch refs\/heads\// { branch=$0; sub(/^branch refs\/heads\//, "", branch); next }
+      /^bare$/ { bare=1; next }
+      /^$/ { emit(); head=""; branch=""; bare=0 }
+      END { emit() }
+    ' | awk '!seen[$0]++'
+}
+_git_wt_complete_bash() {
+  local cur prev command; COMPREPLY=(); cur="${COMP_WORDS[COMP_CWORD]}"; prev="${COMP_WORDS[COMP_CWORD-1]}"; command="${COMP_WORDS[1]:-}"
+  if (( COMP_CWORD == 1 )); then COMPREPLY=( $(compgen -W 'init switch sw checkout co create list ls remove rm prune shellenv help' -- "$cur") ); return; fi
+  case "$command" in
+    switch|sw|checkout|co) COMPREPLY=( $(compgen -W "$(_git_wt_refs)" -- "$cur") );;
+    create) if (( COMP_CWORD == 3 )); then COMPREPLY=( $(compgen -W "$(_git_wt_base_refs)" -- "$cur") ); fi;;
+    remove|rm) if [[ "$cur" == -* && "$prev" != -- ]]; then COMPREPLY=( $(compgen -W '-f --force -s --silent' -- "$cur") ); else COMPREPLY=( $(compgen -W "$(_git_wt_remove_refs)" -- "$cur") ); fi;;
+  esac
+  return 0
+}
+_git_wt_complete_zsh() {
+  local -a commands refs base_refs remove_refs; commands=(init switch sw checkout co create list ls remove rm prune shellenv help); refs=("${(@f)$(_git_wt_refs)}"); base_refs=("${(@f)$(_git_wt_base_refs)}"); remove_refs=("${(@f)$(_git_wt_remove_refs)}")
+  if (( CURRENT == 2 )); then compadd -- $commands; return; fi
+  case "$words[2]" in switch|sw|checkout|co) compadd -- $refs;; create) if (( CURRENT == 4 )); then compadd -- $base_refs; fi;; remove|rm) if [[ "$words[CURRENT]" == -* && "$words[CURRENT-1]" != -- ]]; then compadd -- -f --force -s --silent; else compadd -- $remove_refs; fi;; esac
+  return 0
+}
+if [[ -n "${ZSH_VERSION:-}" ]]; then (( $+functions[compdef] )) && compdef _git_wt_complete_zsh git-wt
+elif [[ -n "${BASH_VERSION:-}" ]]; then complete -F _git_wt_complete_bash git-wt; fi
+EOF
 }
 
+function migration_restore_before_split() {
+  local root="$1" old="$2" old_bare="$3" old_worktree="$4" had_bare="$5" had_worktree="$6"
+  [[ -d "$root/.git" ]] || return 1
+  mv "$root/.git" "$old/.git" || return 1
+  rmdir "$root" || return 1
+  mv "$old" "$root" || return 1
+  if [[ "$had_bare" == true ]]; then command git -C "$root" config core.bare "$old_bare"; else command git -C "$root" config --unset core.bare 2>/dev/null || true; fi
+  if [[ "$had_worktree" == true ]]; then command git -C "$root" config core.worktree "$old_worktree"; else command git -C "$root" config --unset core.worktree 2>/dev/null || true; fi
+}
 function git_migrate_bare() {
-    local repo_root parent repo_name old_root
-    local branch head worktree_name worktree_path
-    local index_path status_before status_after
-    local worktree_count
-
-    # Must be inside a Git working tree.
-    repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || {
-        echo "Error: not inside a Git repository." >&2
-        return 1
-    }
-
-    # For safety, require execution from the repository root.
-    if [ "$(pwd -P)" != "$(cd "$repo_root" && pwd -P)" ]; then
-        echo "Error: run this command from the repository root:" >&2
-        echo "  $repo_root" >&2
-        return 1
-    fi
-
-    # Only support a normal .git directory.
-    if [ ! -d "$repo_root/.git" ]; then
-        echo "Error: .git is not a directory." >&2
-        echo "This repository may already be a linked worktree or use a custom gitdir." >&2
-        return 1
-    fi
-
-    # Do not migrate an already-bare repository.
-    if [ "$(git rev-parse --is-bare-repository)" = "true" ]; then
-        echo "Error: repository is already bare." >&2
-        return 1
-    fi
-
-    # Existing linked worktrees require additional migration handling.
-    worktree_count="$(
-        git worktree list --porcelain |
-            grep -c '^worktree ' 2>/dev/null
-    )"
-
-    if [ "$worktree_count" -gt 1 ]; then
-        echo "Error: repository already has linked worktrees." >&2
-        echo "Migrate or remove them first." >&2
-        return 1
-    fi
-
-    # Initialized submodules contain gitdir paths that would need rewriting.
-    if [ -d "$repo_root/.git/modules" ]; then
-        echo "Error: initialized submodules were detected." >&2
-        echo "Their gitdir paths need separate migration handling." >&2
-        return 1
-    fi
-
-    # Sparse checkout has additional per-worktree metadata.
-    if git config --bool --get core.sparseCheckout 2>/dev/null |
-        grep -q '^true$'; then
-        echo "Error: sparse checkout is enabled." >&2
-        return 1
-    fi
-
-    # Refuse migration while Git has an operation in progress.
-    local state
-    for state in \
-        MERGE_HEAD \
-        CHERRY_PICK_HEAD \
-        REVERT_HEAD \
-        rebase-merge \
-        rebase-apply \
-        sequencer \
-        BISECT_LOG
-    do
-        if [ -e "$(git rev-parse --git-path "$state")" ]; then
-            echo "Error: Git operation in progress: $state" >&2
-            echo "Finish or abort it before migrating." >&2
-            return 1
-        fi
-    done
-
-    head="$(git rev-parse HEAD)" || return 1
-    branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
-
-    # Optional argument overrides the worktree directory name.
-    if [ -n "${1:-}" ]; then
-        worktree_name="$1"
-    elif [ -n "$branch" ]; then
-        # feature/foo -> feature-foo
-        worktree_name="${branch//\//-}"
-    else
-        worktree_name="worktree"
-    fi
-
-    if [ -z "$worktree_name" ] ||
-       [ "$worktree_name" = "." ] ||
-       [ "$worktree_name" = ".." ]; then
-        echo "Error: invalid worktree directory name." >&2
-        return 1
-    fi
-
-    parent="$(dirname "$repo_root")"
-    repo_name="$(basename "$repo_root")"
-    old_root="${parent}/${repo_name}.pre-bare-migration.$$"
-    worktree_path="${repo_root}/${worktree_name}"
-
-    if [ -e "$old_root" ]; then
-        echo "Error: temporary path already exists:" >&2
-        echo "  $old_root" >&2
-        return 1
-    fi
-
-    status_before="$(
-        mktemp "${TMPDIR:-/tmp}/git-migrate-before.XXXXXX"
-    )" || return 1
-
-    status_after="$(
-        mktemp "${TMPDIR:-/tmp}/git-migrate-after.XXXXXX"
-    )" || {
-        rm -f "$status_before"
-        return 1
-    }
-
-    # -z makes the snapshot safe for unusual filenames.
-    git status \
-        --porcelain=v1 \
-        --untracked-files=all \
-        -z >"$status_before" || {
-        rm -f "$status_before" "$status_after"
-        return 1
-    }
-
-    echo "Migrating:"
-    echo "  Repository: $repo_root"
-
-    if [ -n "$branch" ]; then
-        echo "  Branch:     $branch"
-    else
-        echo "  HEAD:       $head (detached)"
-    fi
-
-    echo "  Worktree:   $worktree_name"
-    echo
-
-    #
-    # 1. Move the whole repository aside.
-    #
-    cd "$parent" || return 1
-    mv "$repo_root" "$old_root" || return 1
-    mkdir "$repo_root" || return 1
-
-    #
-    # 2. Move the original .git directory into the new container.
-    #
-    mv "$old_root/.git" "$repo_root/.git" || return 1
-
-    #
-    # 3. Convert the repository metadata to bare mode.
-    #
-    git --git-dir="$repo_root/.git" config core.bare true || return 1
-
-    git --git-dir="$repo_root/.git" \
-        config --unset core.worktree 2>/dev/null || true
-
-    # Make linked worktree paths relative to the repository.
-    git --git-dir="$repo_root/.git" \
-        config worktree.useRelativePaths true || return 1
-
-    #
-    # 4. Create a linked worktree without checking files out.
-    #
-    if [ -n "$branch" ]; then
-        git --git-dir="$repo_root/.git" \
-            worktree add \
-            --no-checkout \
-            "$worktree_path" \
-            "$branch" || return 1
-    else
-        git --git-dir="$repo_root/.git" \
-            worktree add \
-            --detach \
-            --no-checkout \
-            "$worktree_path" \
-            "$head" || return 1
-    fi
-
-    #
-    # 5. Move the original working tree into the linked worktree.
-    #
-    # .git has already been moved, so everything left here belongs
-    # to the original working tree, including hidden and ignored files.
-    #
-    find "$old_root" \
-        -mindepth 1 \
-        -maxdepth 1 \
-        -exec mv {} "$worktree_path/" \; || return 1
-
-    #
-    # 6. Move the original index into the linked worktree.
-    #
-    index_path="$(
-        git -C "$worktree_path" rev-parse --git-path index
-    )" || return 1
-
-    mv "$repo_root/.git/index" "$index_path" || return 1
-
-    #
-    # 7. Verify that Git sees exactly the same working state.
-    #
-    git -C "$worktree_path" status \
-        --porcelain=v1 \
-        --untracked-files=all \
-        -z >"$status_after" || return 1
-
-    if ! cmp -s "$status_before" "$status_after"; then
-        echo >&2
-        echo "Warning: Git status differs after migration." >&2
-        echo "The temporary directory was kept:" >&2
-        echo "  $old_root" >&2
-        echo >&2
-        echo "Nothing will be deleted automatically." >&2
-
-        rm -f "$status_before" "$status_after"
-        return 1
-    fi
-
-    rm -f "$status_before" "$status_after"
-
-    # It should now be empty.
-    rmdir "$old_root" 2>/dev/null || {
-        echo "Warning: temporary directory is not empty:" >&2
-        echo "  $old_root" >&2
-    }
-
-    cd "$worktree_path" || return 1
-
-    echo
-    echo "Migration completed successfully."
-    echo
-    echo "Bare repository:"
-    echo "  $repo_root/.git"
-    echo
-    echo "Working tree:"
-    echo "  $worktree_path"
-    echo
-    git status --short
+  local repo_root parent repo_name old_root branch head worktree_name worktree_path index_path state status_before status_after add_help old_bare old_worktree had_bare=false had_worktree=false
+  repo_root="$(command git rev-parse --show-toplevel 2>/dev/null)" || { error "Not inside a Git working tree."; return 1; }
+  [[ "$(pwd -P)" == "$(cd "$repo_root" && pwd -P)" ]] || { error "Run this command from the repository root: $repo_root"; return 1; }
+  require_no_newline "$repo_root" || return 1
+  [[ -d "$repo_root/.git" ]] || { error "This repository uses a gitdir file or is already a linked worktree."; return 1; }
+  [[ "$(command git rev-parse --is-bare-repository)" != true ]] || { error "Repository is already bare."; return 1; }
+  (( $(command git worktree list --porcelain | command grep -c '^worktree ' || true) == 1 )) || { error "Repository already has linked worktrees."; return 1; }
+  [[ ! -d "$repo_root/.git/modules" ]] || { error "Initialized submodules were detected."; return 1; }
+  [[ "$(command git config --bool --get core.sparseCheckout 2>/dev/null || true)" != true ]] || { error "Sparse checkout is enabled."; return 1; }
+  for state in MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD rebase-merge rebase-apply sequencer BISECT_LOG; do [[ ! -e "$(command git rev-parse --git-path "$state")" ]] || { error "Git operation in progress: $state"; return 1; }; done
+  add_help="$(command git worktree add -h 2>&1 || true)"
+  [[ "$add_help" == *--\[no-\]relative-paths* ]] || { error "Installed Git lacks relative worktree path support."; return 1; }
+  head="$(command git rev-parse HEAD)" || { error "Repository has no commit to migrate."; return 1; }
+  branch="$(command git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"; worktree_name="${branch:-detached-${head[1,12]}}"
+  require_no_newline "$worktree_name" || return 1; command git check-ref-format --branch "$worktree_name" >/dev/null 2>&1 || { error "Invalid worktree directory name: $worktree_name"; return 1; }
+  parent="${repo_root:h}"; repo_name="${repo_root:t}"; old_root="${parent}/${repo_name}.pre-bare-migration.$$"; worktree_path="$repo_root/$worktree_name"
+  [[ ! -e "$old_root" ]] || { error "Temporary path already exists: $old_root"; return 1; }
+  status_before="$(mktemp "${TMPDIR:-/tmp}/git-migrate-before.XXXXXX")" || return 1; status_after="$(mktemp "${TMPDIR:-/tmp}/git-migrate-after.XXXXXX")" || return 1
+  command git status --porcelain=v1 --untracked-files=all -z >"$status_before" || return 1
+  old_bare="$(command git config --local --get core.bare 2>/dev/null || true)"; [[ -n "$old_bare" ]] && had_bare=true
+  old_worktree="$(command git config --local --get core.worktree 2>/dev/null || true)"; [[ -n "$old_worktree" ]] && had_worktree=true
+  if ! mv "$repo_root" "$old_root" || ! mkdir "$repo_root"; then error "Could not prepare migration. Repository data remains at: $old_root"; return 1; fi
+  if ! mv "$old_root/.git" "$repo_root/.git"; then rmdir "$repo_root" 2>/dev/null || true; mv "$old_root" "$repo_root" 2>/dev/null || true; error "Could not move Git metadata; restored the original repository."; return 1; fi
+  command git --git-dir="$repo_root/.git" config core.bare true || { migration_restore_before_split "$repo_root" "$old_root" "$old_bare" "$old_worktree" "$had_bare" "$had_worktree" || true; error "Could not enable bare mode; original repository was restored when possible."; return 1; }
+  if [[ "$had_worktree" == true ]]; then command git --git-dir="$repo_root/.git" config --unset core.worktree || { migration_restore_before_split "$repo_root" "$old_root" "$old_bare" "$old_worktree" "$had_bare" "$had_worktree" || true; error "Could not clear core.worktree; original repository was restored when possible."; return 1; }; fi
+  command git --git-dir="$repo_root/.git" config worktree.useRelativePaths true || { migration_restore_before_split "$repo_root" "$old_root" "$old_bare" "$old_worktree" "$had_bare" "$had_worktree" || true; error "Could not enable relative worktree paths; original repository was restored when possible."; return 1; }
+  if [[ -n "$branch" ]]; then command git --git-dir="$repo_root/.git" worktree add --relative-paths --no-checkout "$worktree_path" "$branch"
+  else command git --git-dir="$repo_root/.git" worktree add --relative-paths --detach --no-checkout "$worktree_path" "$head"; fi || { error "Creating the linked worktree failed. Data is at '$old_root'; metadata is at '$repo_root/.git'. Restore with: mv '$repo_root/.git' '$old_root/.git'; rmdir '$repo_root'; mv '$old_root' '$repo_root'"; return 1; }
+  local item
+  local -a items
+  items=("$old_root"/*(N) "$old_root"/.[!.]*(N) "$old_root"/..?*(N))
+  for item in "${items[@]}"; do
+    mv "$item" "$worktree_path/" || { error "Moving working files failed. Remaining data is in '$old_root'; moved files are in '$worktree_path'."; return 1; }
+  done
+  index_path="$(command git -C "$worktree_path" rev-parse --path-format=absolute --git-path index)" || return 1
+  if [[ -e "$repo_root/.git/index" ]]; then
+    mv "$repo_root/.git/index" "$index_path" || { error "Moving the index failed. It remains at '$repo_root/.git/index'; destination: '$index_path'."; return 1; }
+  fi
+  command git -C "$worktree_path" status --porcelain=v1 --untracked-files=all -z >"$status_after" || return 1
+  cmp -s "$status_before" "$status_after" || { error "Git status differs after migration. Data was retained at '$worktree_path' and '$old_root'."; return 1; }
+  command rm -f "$status_before" "$status_after"; rmdir "$old_root" 2>/dev/null || print_warning "Temporary directory is not empty: $old_root"
+  print_success "Migration completed. Bare repository: $repo_root/.git"; emit_cd "$(cd "$worktree_path" && pwd -P)"
 }
 
+function main() {
+  local command="${1:-list}"; (( $# > 0 )) && shift
+  case "$command" in
+    init) init "$@";; switch|sw|checkout|co) switch "$@";; create) create "$@";; list|ls) list "$@";; remove|rm) remove "$@";; prune) prune "$@";;
+    shellenv) [[ $# -eq 0 ]] || { error "Usage: git-wt shellenv"; return 1; }; shellenv;; help|--help|-h) usage;; *) error "Unknown command: $command"; usage; return 1;;
+  esac
+}
 main "$@"
