@@ -1,5 +1,4 @@
 [alias]
-  info = remote -v
   co = checkout
   br = branch -v
   ci = commit
@@ -9,35 +8,32 @@
   db = diff -b
   dw = diff -b --word-diff
   rt = reset --hard
+  sp = stash pop
   unstage = reset HEAD
   uncommit = reset --soft HEAD^
-  # custom color one line with author
-  l = "log --graph --format=format:'%C(bold blue)%h%C(reset) \
-%C(auto)%s%C(reset) %C(bold yellow)<%an>%C(reset)%C(auto)%d%C(reset)' \
---abbrev-commit --date=relative"
-  # custom color one line with author and relative author date
-  ld = "log --graph --all --format=format:'%C(bold blue)%h%C(reset) - \
-%C(bold green)(%ar)%C(reset) %C(auto)%s%C(reset) %C(bold yellow)<%an>%C(reset)\
-%C(auto)%d%C(reset)' --abbrev-commit --date=relative"
-  # one line for short
-  ls = log --pretty=one line --abbrev-commit --graph --decorate
+  # Show remote info, last commit, who contributed, and tags
+  info = remote -v
+  last = log -1 HEAD
   who = shortlog -n -s --no-merges
+  tags = tag -l --sort=v:refname
+  # Show all commits by a specific author
+  author = log --author
+  # Show all commits by a specific committer
+  committer = log --committer
   g = grep -n --color -E
+  # custom color one line with author
+  l = "log --graph --abbrev-commit --date=relative \
+    --format=format:'%C(bold blue)%h%C(reset) %C(auto)%s%C(reset) %C(bold yellow)<%an>%C(reset)%C(auto)%d%C(reset)'"
+  # custom color one line with author and relative author date
+  ld = "log --graph --abbrev-commit --date=relative --all \
+    --format=format:'%C(bold blue)%h%C(reset) - %C(bold green)(%ar)%C(reset) %C(auto)%s%C(reset) %C(bold yellow)<%an>%C(reset) %C(auto)%d%C(reset)'"
+  # one line for short
+  ls = log --graph --abbrev-commit --decorate --all --pretty=oneline
   # Handy shortcuts for rebasing
   rc = rebase --continue
   rs = rebase --skip
   ra = rebase --abort
   rh = rebase HEAD
-  wt = worktree
-  wa = worktree add
-  wl = worktree list
-  wo = worktree lock
-  wm = worktree move
-  wp = worktree prune
-  wr = worktree remove
-  wu = worktree unlock
-  sp = stash pop
-  last = log -1 HEAD
 [branch]
   autosetuprebase = always
 [color]
