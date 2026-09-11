@@ -147,7 +147,7 @@ function setup_config_links() {
 }
 
 function setup_bin_links() {
-  print_default "Linked bin files to home directory."
+  print_default "Linked bin files to home .local directory."
   # Ensure the local bin directory exists
   if [[ ! -d "$HOME/.local/bin" ]]; then
     print_default "Creating local bin directory: $HOME/.local/bin"
@@ -155,6 +155,7 @@ function setup_bin_links() {
   fi
   # Symlink bin files.
   run ln -fnsv "$BIN_DIR/git-pr" "$HOME/.local/bin/git-pr"
+  run ln -fnsv "$BIN_DIR/git-wt" "$HOME/.local/bin/git-wt"
   run ln -fnsv "$BIN_DIR/print_utils.sh" "$HOME/.local/bin/print_utils.sh"
 }
 
