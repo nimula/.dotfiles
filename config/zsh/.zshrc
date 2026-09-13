@@ -119,6 +119,11 @@ fi
 # Initialize modules.
 source ${ZIM_HOME}/init.zsh
 
+# Initialize git-wt shell environment if available
+if command -v git-wt > /dev/null 2>&1; then
+  source <(git-wt shellenv)
+fi
+
 # ------------------------------
 # Post-init module configuration
 # ------------------------------
