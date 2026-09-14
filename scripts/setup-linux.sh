@@ -30,7 +30,7 @@ curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/instal
 curl -fsSL https://herdr.dev/install.sh | sh
 
 # Install Codex.
-curl -fsSL https://chatgpt.com/codex/install.sh | sh
+curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh
 
 # Clone Tmux Plugin Manager if it isn't already present.
 if [[ ! -d "${HOME}/.tmux/plugins/tpm/" ]]; then

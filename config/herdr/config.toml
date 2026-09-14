@@ -42,6 +42,9 @@ switch_workspace = "prefix+shift+1..9"
   height = "80%"
 
 [ui]
+pane_borders = "auto"
+status_indicators = "symbols"
+sidebar_collapsed_mode = "hidden"
 show_agent_labels_on_pane_borders = true
   [ui.sidebar.agents.rows_by_agent]
   claude = [
