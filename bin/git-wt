@@ -28,7 +28,7 @@ $(tput bold)USAGE$(tput sgr0)
   $(tput bold; tput setaf 74)git-wt <command> [augments] [options]$(tput sgr0)
 
 $(tput bold)COMMAND$(tput sgr0)
-  init [repository [directory]]     Clone as a bare container, or migrate this repo
+  init [repository [directory]]     Clone, initialize a new directory, or confirm migration
   switch, sw, checkout, co <branch> Switch to a branch in new worktree
   create <branch> [base]            Create new branch in worktree (default: main/master)
   list, ls                          List all worktrees
@@ -188,9 +188,113 @@ function derive_clone_directory() {
   print -r -- "$source_name"
 }
 
+# New directories are initialized in place, so reject every component of a
+# slash-containing branch path before creating .git or moving user files.
+function validate_initial_worktree_destination() {
+  local root="$1" branch="$2" candidate="$root/$branch" current="$root" part
+  local -a parts
+  require_no_newline "$branch" || return 1
+  command git check-ref-format --branch "$branch" >/dev/null 2>&1 || {
+    error "Invalid initial branch name: $branch"
+    return 1
+  }
+  parts=("${(@s:/:)branch}")
+  for part in "${parts[@]}"; do
+    current="$current/$part"
+    [[ ! -L "$current" ]] || {
+      error "Refusing an initial worktree path through symlink: $current"
+      return 1
+    }
+    [[ ! -e "$current" ]] || {
+      error "Initial worktree path collides with existing data: $current"
+      return 1
+    }
+  done
+  print -r -- "$candidate"
+}
+
+# A newly initialized container has no pre-existing Git state to restore. Its
+# recovery instructions move only the known worktree contents before removing
+# metadata that this invocation created.
+function fresh_init_error() {
+  local step="$1" root="$2" worktree="$3" parent="${3:h}"
+  local quoted_root="${(q)root}" quoted_worktree="${(q)worktree}"
+  error "$step failed. Original data remains at: $root"
+  [[ ! -d "$worktree" ]] || print -u2 -r -- "Moved working data: $worktree"
+  [[ ! -d "$root/.git" ]] || print -u2 -r -- "Git metadata: $root/.git"
+  [[ -d "$root/.git" ]] || return 1
+  print -u2 -r -- "To restore from Zsh after correcting the failure:"
+  print -u2 -r -- "  () {"
+  if [[ -d "$worktree" ]]; then
+    print -u2 -r -- "    local item destination"
+    print -u2 -r -- "    for item in $quoted_worktree/*(DN); do"
+    print -u2 -r -- "      [[ \"\$item\" == $quoted_worktree/.git ]] && continue"
+    print -u2 -r -- "      destination=$quoted_root/\"\${item:t}\""
+    print -u2 -r -- "      [[ ! -e \"\$destination\" && ! -L \"\$destination\" ]] || { print -u2 -- \"Recovery destination exists: \$destination\"; return 1; }"
+    print -u2 -r -- "      mv -- \"\$item\" \"\$destination\" || return 1"
+    print -u2 -r -- "    done"
+    # The whole new repository will be removed, so recovery must also work
+    # when worktree registration was interrupted before Git could read it.
+    print -u2 -r -- "    rm -f -- $quoted_worktree/.git || return 1"
+    print -u2 -r -- "    rmdir -- $quoted_worktree || return 1"
+  fi
+  while [[ "$parent" != "$root" ]]; do
+    if [[ -d "$parent" ]]; then
+      print -u2 -r -- "    rmdir -- ${(q)parent} || return 1"
+    fi
+    parent="${parent:h}"
+  done
+  print -u2 -r -- "    rm -rf -- $quoted_root/.git"
+  print -u2 -r -- "  }"
+  return 1
+}
+
+function git_init_bare() {
+  local root branch worktree_path add_help capability_root item
+  local -a original_items
+  root="$(pwd -P)" || return 1
+  require_no_newline "$root" || return 1
+  branch="$(command git config --get init.defaultBranch 2>/dev/null || print -r -- master)"
+  worktree_path="$(validate_initial_worktree_destination "$root" "$branch")" || return 1
+  capability_root="$(mktemp -d "${TMPDIR:-/tmp}/git-wt-capability.XXXXXX")" || return 1
+  if command git init --bare "$capability_root/.git" >/dev/null 2>&1; then
+    add_help="$(command git --git-dir="$capability_root/.git" worktree add -h 2>&1 || true)"
+  else
+    add_help=''
+  fi
+  command rm -rf -- "$capability_root"
+  [[ "$add_help" == *--\[no-\]orphan* && "$add_help" == *--\[no-\]relative-paths* ]] || {
+    error "Installed Git lacks orphan or relative worktree path support."
+    return 1
+  }
+  # Expand this before .git and the target worktree exist, so it contains only
+  # the user's original entries and cannot accidentally move generated paths.
+  original_items=("$root"/*(N) "$root"/.[!.]*(N) "$root"/..?*(N))
+  command git init --bare "$root/.git" || {
+    fresh_init_error "Could not initialize bare Git metadata" "$root" "$worktree_path"
+    return 1
+  }
+  command git --git-dir="$root/.git" config worktree.useRelativePaths true || {
+    fresh_init_error "Could not enable relative worktree paths" "$root" "$worktree_path"
+    return 1
+  }
+  command git --git-dir="$root/.git" worktree add --relative-paths --orphan -b "$branch" "$worktree_path" || {
+    fresh_init_error "Creating the initial orphan worktree" "$root" "$worktree_path"
+    return 1
+  }
+  for item in "${original_items[@]}"; do
+    mv "$item" "$worktree_path/" || {
+      fresh_init_error "Moving original files" "$root" "$worktree_path"
+      return 1
+    }
+  done
+  print_success "Initialized bare container: $root"
+  emit_cd "$(cd "$worktree_path" && pwd -P)"
+}
+
 # MARK: Function Init
 # With arguments, clone a remote into the managed bare-container layout.
-# Without arguments, hand the current regular repository to the migration path.
+# Without arguments, confirm migration or initialize a directory outside Git.
 function init() {
   if [[ "${1:-}" == -- ]]; then
     shift
@@ -199,7 +303,23 @@ function init() {
     return 1
   fi
   if [[ $# -eq 0 ]]; then
-    git_migrate_bare
+    if command git rev-parse --git-dir >/dev/null 2>&1; then
+      git_migrate_bare
+    else
+      # Failed discovery can come from broken metadata above the current
+      # directory. Do not turn that failure into a nested repository.
+      local ancestor
+      ancestor="$(pwd -P)" || return 1
+      while true; do
+        if [[ -e "$ancestor/.git" || -L "$ancestor/.git" ]]; then
+          error "Git metadata exists but cannot be read; refusing to initialize over .git: $ancestor/.git"
+          return 1
+        fi
+        [[ "$ancestor" != / ]] || break
+        ancestor="${ancestor:h}"
+      done
+      git_init_bare
+    fi
     return $?
   fi
   [[ $# -le 2 ]] || {
@@ -882,6 +1002,16 @@ function git_migrate_bare() {
   worktree_path="$repo_root/$worktree_name"
   [[ ! -e "$old_root" ]] || {
     error "Temporary path already exists: $old_root"
+    return 1
+  }
+  if [[ ! -t 0 || ! -t 2 ]]; then
+    error "Migration requires an interactive terminal confirmation. Repository was not moved."
+    return 1
+  fi
+  local answer
+  print -u2 -n -- "Migrate $repo_root into bare container $repo_root/.git with worktree $worktree_path? [y/N] "
+  read -r answer && [[ "$answer" == [yY] || "$answer" == [yY][eE][sS] ]] || {
+    error "Migration cancelled. Repository was not moved."
     return 1
   }
   status_before="$(mktemp "${TMPDIR:-/tmp}/git-migrate-before.XXXXXX")" || return 1
