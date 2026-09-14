@@ -20,22 +20,35 @@ function error() {
 # Print static help without requiring repository discovery, so it also works
 # from arbitrary directories and during shell setup.
 function usage() {
-  cat <<'EOF'
+  setopt local_options posix_argzero
+  cat <<EOF
 Git worktree management with organized directory structure.
 
-Usage: git-wt <command> [arguments]
+$(tput bold)USAGE$(tput sgr0)
+  $(tput bold; tput setaf 74)git-wt <command> [augments] [options]$(tput sgr0)
 
-Commands:
-  init [repository [directory]]  Clone as a bare container, or migrate this repo
-  switch, sw, checkout, co <branch>
-  create <branch> [base]
-  list, ls
-  remove, rm [-f] [-s] <ref|pattern>
-  prune
-  shellenv
+$(tput bold)COMMAND$(tput sgr0)
+  init [repository [directory]]     Clone as a bare container, or migrate this repo
+  switch, sw, checkout, co <branch> Switch to a branch in new worktree
+  create <branch> [base]            Create new branch in worktree (default: main/master)
+  list, ls                          List all worktrees
+  remove, rm [-f] <ref|pattern>     Remove by branch, detached HEAD SHA, or pattern
+  prune                             Remove worktree administrative files
+  shellenv                          Output shell function for auto-cd (source this)
 
-Load auto-cd and completion with:
+$(tput bold)OPTIONS$(tput sgr0)
+  -f, --force         For remove: drop a worktree with uncommitted
+                      changes, and skip confirmation for patterns or
+                      shared SHAs. Repeat it (-f -f) to remove
+                      a locked worktree, as git itself requires.
+  -s, --silent        Silent mode (do not prompt for input)
+  -h, --help          Show this help message
+
+Setup auto-cd and completion with:
+  Add to ~/.bashrc or ~/.zshrc:
   source <(git-wt shellenv)
+
+Worktrees are organized at: <repo>/<branch>
 EOF
 }
 
