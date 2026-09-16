@@ -1,5 +1,5 @@
 # Format: <repo_url>[|<skill_dir>...]. Omit skill directories to install all discovered skills.
 https://github.com/poteto/how.git
 https://github.com/Raymondhou0917/speak-human-tw.git
-https://github.com/mattpocock/skills.git
 https://github.com/anthropics/skills.git|skills/frontend-design|skills/theme-factory/SKILL.md
+https://github.com/mattpocock/skills.git|ask-matt|code-review|codebase-design|diagnosing-bugs|domain-modeling|grill-me|grill-with-docs|grilling|handoff|implement|improve-codebase-architecture|prototype|research|resolving-merge-conflicts|setup-matt-pocock-skills|tdd|teach|to-questionnaire|to-spec|to-tickets|triage|wait-what|wayfinder|wizard|writing-for-agents

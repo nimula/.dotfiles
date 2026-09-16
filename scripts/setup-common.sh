@@ -164,7 +164,7 @@ function install_zim() {
   # Install zim if it isn't already present
   if [[ ! -d "$ZIM_HOME" ]]; then
     print_default "Install zim..."
-    curl -fsSL https://raw.githubusercontent.com/zimfw/install/master/install.zsh | zsh
+    run bash -c "curl -fsSL https://raw.githubusercontent.com/zimfw/install/master/install.zsh | zsh"
   fi
 }
 
