@@ -91,6 +91,66 @@ function discover_agent_skills() (
     LC_ALL=C sort
 )
 
+# Resolve one skills.list field to a repository-relative SKILL.md path.
+# An explicit path wins; a bare skill name is looked up in the discovery index
+# so the list survives upstream folder reorganization.
+function resolve_agent_skill_path() (
+  local repo_dir="$1"
+  local discovered_file="$2"
+  local repo_url="$3"
+  local requested_path="$4"
+  local candidate
+  local discovered_path
+  local matches=""
+  local match_count=0
+
+  requested_path="${requested_path%/}"
+  requested_path="${requested_path#./}"
+  if [ -z "$requested_path" ]; then
+    print_error "Empty agent skill path in $repo_url" >&2
+    return 1
+  fi
+
+  if [ "$requested_path" = "SKILL.md" ] || [[ "$requested_path" == */SKILL.md ]]; then
+    candidate="$requested_path"
+  else
+    candidate="${requested_path}/SKILL.md"
+  fi
+
+  # An explicit path that exists always wins, keeping existing entries working.
+  if [ -f "${repo_dir}/${candidate}" ]; then
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+  if [[ "$requested_path" == */* ]]; then
+    print_error "Agent skill path does not exist: ${repo_url}|${requested_path}" >&2
+    return 1
+  fi
+
+  # A bare name matches a single skill folder of that name, at any depth.
+  while IFS= read -r discovered_path || [ -n "$discovered_path" ]; do
+    case "$discovered_path" in
+      */"${requested_path}"/SKILL.md)
+        matches="${matches}${discovered_path}"$'\n'
+        match_count=$((match_count + 1))
+        ;;
+    esac
+  done < "$discovered_file"
+
+  if [ "$match_count" -eq 1 ]; then
+    printf '%s' "$matches"
+    return 0
+  fi
+  if [ "$match_count" -eq 0 ]; then
+    print_error "Agent skill not found in ${repo_url}: ${requested_path}" >&2
+  else
+    print_error "Ambiguous agent skill name in ${repo_url}: ${requested_path}" >&2
+    print_error "Replace it in config/agents/skills.list with one of:" >&2
+    printf '%s' "$matches" | sed 's/^/  /' >&2
+  fi
+  return 1
+)
+
 # Read the skill name from the YAML frontmatter at the start of SKILL.md.
 function read_agent_skill_name() (
   local skill_file="$1"
@@ -514,24 +574,20 @@ function sync_agent_skill_repo() (
     return 1
   fi
 
+  if ! discover_agent_skills "$repo_dir" > "$discovered_file"; then
+    print_error "Failed to discover agent skills in $repo_url"
+    return 1
+  fi
+
   # No explicit paths means every discovered skill in the repository.
   if [ "${#requested_paths[@]}" -eq 0 ]; then
-    if ! discover_agent_skills "$repo_dir" > "$discovered_file"; then
-      print_error "Failed to discover agent skills in $repo_url"
-      return 1
-    fi
     while IFS= read -r skill_path || [ -n "$skill_path" ]; do
       [ -n "$skill_path" ] && skill_paths+=("$skill_path")
     done < "$discovered_file"
   else
     for requested_path in "${requested_paths[@]}"; do
-      requested_path="${requested_path%/}"
-      requested_path="${requested_path#./}"
-      if [ "$requested_path" = "SKILL.md" ] || [[ "$requested_path" == */SKILL.md ]]; then
-        skill_path="$requested_path"
-      else
-        skill_path="${requested_path}/SKILL.md"
-      fi
+      skill_path=$(resolve_agent_skill_path \
+        "$repo_dir" "$discovered_file" "$repo_url" "$requested_path") || return 1
       skill_paths+=("$skill_path")
     done
   fi
