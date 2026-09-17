@@ -34,6 +34,14 @@
   rs = rebase --skip
   ra = rebase --abort
   rh = rebase HEAD
+
+  wi = wt init
+  ws = wt sw
+  wc = wt create
+  wr = wt remove
+  wp = wt prune
+  wl = worktree lock
+  wu = worktree unlock
 [branch]
   autosetuprebase = always
 [color]

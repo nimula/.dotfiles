@@ -719,10 +719,15 @@ _git_wt_remove_refs() {
 # Candidate discovery stays shared; these adapters only translate each shell's
 # cursor state into the same positional rules.
 _git_wt_complete_bash() {
-  local cur subcommand word candidate quoted_candidate candidate_source='' after_dd=false
+  local cur subcommand word candidate quoted_candidate candidate_source='' after_dd=false quote=''
   local -i index positional=0
   COMPREPLY=()
   cur="${COMP_WORDS[COMP_CWORD]}"
+  # Readline keeps an opening quote in COMP_WORDS. Match the literal prefix,
+  # then let Readline quote the raw candidate within that existing quote.
+  case "$cur" in
+    \'*|\"*) quote="${cur:0:1}"; cur="${cur:1}"; compopt -o filenames 2>/dev/null || true ;;
+  esac
   subcommand="${COMP_WORDS[1]:-}"
   if (( COMP_CWORD == 1 )); then
     COMPREPLY=( $(compgen -W 'init switch sw checkout co create list ls remove rm prune shellenv help' -- "$cur") )
@@ -766,7 +771,19 @@ _git_wt_complete_bash() {
       if [[ -n "$candidate" && "$candidate" == "$cur"* ]]; then
         # Readline inserts these words into a command line. Quote them so a
         # subsequent Enter cannot evaluate the ref as shell syntax either.
-        printf -v quoted_candidate '%q' "$candidate"
+        if [[ "$quote" == '"' ]]; then
+          # Readline does not protect expansion characters inside double quotes.
+          # Escape only characters special in that context, exactly once.
+          quoted_candidate="${candidate//\\/\\\\}"
+          quoted_candidate="${quoted_candidate//\"/\\\"}"
+          quoted_candidate="${quoted_candidate//\$/\\\$}"
+          quoted_candidate="${quoted_candidate//\`/\\\`}"
+          compopt -o noquote 2>/dev/null || true
+        elif [[ -n "$quote" ]]; then
+          quoted_candidate="$candidate"
+        else
+          printf -v quoted_candidate '%q' "$candidate"
+        fi
         COMPREPLY+=("$quoted_candidate")
       fi
     done < <("$candidate_source")
@@ -813,6 +830,34 @@ _git_wt_complete_zsh() {
   esac
   (( ${#candidates} == 0 )) || compadd -- $candidates
   return 0
+}
+# Git's providers retain the full command line. Native Zsh has already removed
+# `git` through _arguments before calling its subcommand hook.
+_git_wt_complete_git_bash() {
+  # Git registers nospace; our complete words use Readline's normal separator.
+  compopt +o nospace 2>/dev/null || true
+  local -a COMP_WORDS=(git-wt "${COMP_WORDS[@]:2}")
+  local -i COMP_CWORD=$(( COMP_CWORD - 1 ))
+  _git_wt_complete_bash
+}
+_git_wt() {
+  if [[ -n "${ZSH_VERSION:-}" ]]; then
+    _git_wt_complete_git_zsh
+  else
+    _git_wt_complete_git_bash
+  fi
+}
+_git_wt_complete_git_zsh() {
+  # Git calls its hook under `emulate ksh`; restore Zsh indexing before using
+  # the shared completer. cword still points into Git's original command line.
+  emulate -L zsh
+  local -a words=(git-wt "${words[@]:2}")
+  local -i CURRENT=$cword
+  _git_wt_complete_zsh
+}
+_git-wt() {
+  emulate -L zsh
+  _git_wt_complete_zsh
 }
 if [[ -n "${ZSH_VERSION:-}" ]]; then
   (( ${+functions[compdef]} )) && compdef _git_wt_complete_zsh git-wt
