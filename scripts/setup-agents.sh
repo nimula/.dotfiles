@@ -663,7 +663,8 @@ function install_agent_skills() {
     repo_url="${fields[0]}"
     skill_paths=("${fields[@]:1}")
 
-    if ! sync_agent_skill_repo "$repo_url" "${skill_paths[@]}"; then
+    # Bash 3.2 treats empty array expansion as unset under set -u.
+    if ! sync_agent_skill_repo "$repo_url" ${skill_paths[@]+"${skill_paths[@]}"}; then
       return 1
     fi
   done < "$skills_file"

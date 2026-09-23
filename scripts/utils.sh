@@ -48,6 +48,24 @@ function run() {
   fi
 }
 
+function load_homebrew_environment() {
+  local brew_path
+  local shellenv
+
+  if command -v brew >/dev/null 2>&1; then
+    brew_path="$(command -v brew)"
+  elif [ -x /opt/homebrew/bin/brew ]; then
+    brew_path=/opt/homebrew/bin/brew
+  elif [ -x /usr/local/bin/brew ]; then
+    brew_path=/usr/local/bin/brew
+  else
+    return 1
+  fi
+
+  shellenv="$("$brew_path" shellenv)" || return 1
+  eval "$shellenv"
+}
+
 # Print usage help
 function print_help() {
   cat <<EOF

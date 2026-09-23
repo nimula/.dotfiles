@@ -18,6 +18,9 @@ fi
 if ! type brew >/dev/null 2>/dev/null; then
   print_default "Homebrew not found. Installing Homebrew..."
   run /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  if [ "$DRY_RUN" = false ]; then
+    load_homebrew_environment
+  fi
 fi
 
 run brew update

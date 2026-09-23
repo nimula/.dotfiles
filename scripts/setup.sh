@@ -81,6 +81,12 @@ function main() {
 
   run_with_env "$CURR_DIR/setup-linux.sh"
   run_with_env "$CURR_DIR/setup-homebrew.sh"
+  # Homebrew setup runs in a child shell, so load its PATH for later scripts.
+  if [ "$(uname)" = Darwin ] &&
+    [ "${DRY_RUN:-false}" = false ] &&
+    [ "${SKIP_PKG_INSTALL:-false}" = false ]; then
+    load_homebrew_environment || true
+  fi
   run_with_env "$CURR_DIR/setup-common.sh"
   run_with_env "$CURR_DIR/setup-agents.sh"
   run_with_env "$CURR_DIR/setup-mac.sh"
