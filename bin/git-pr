@@ -662,8 +662,8 @@ function update_pr_summary() {
 
   print_default "Updating PR description..."
   # Update PR description on the origin repo without setting default remote repository
-  "${PR_CLI[@]}" edit $pr_number --body "$gemini_review"
-  open_pr "$pr_number"
+  run "${PR_CLI[@]}" edit "$pr_number" --body "$gemini_review"
+  run open_pr "$pr_number"
 }
 
 # MARK: Open PR Function
