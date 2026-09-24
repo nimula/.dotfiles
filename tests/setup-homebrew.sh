@@ -76,9 +76,11 @@ run_setup() {
   local case_root="$1"
   local path_prefix="$2"
 
+  # Match the literal defaults exported by install.sh. This guards against
+  # setup.sh treating the non-empty string "false" as an enabled option.
   PATH="$path_prefix$case_root/bin:/usr/bin:/bin" \
     TERM=xterm \
-    DRY_RUN= VERBOSE= DEBUG= SKIP_PKG_INSTALL= REMOTE_CONTAINERS= \
+    DRY_RUN=false VERBOSE=false DEBUG=false SKIP_PKG_INSTALL=false REMOTE_CONTAINERS=false \
     TEST_HOMEBREW_PREFIX="$TEST_HOMEBREW_PREFIX" \
     TEST_BREW_LOG="$TEST_BREW_LOG" \
     TEST_CURL_LOG="$TEST_CURL_LOG" \

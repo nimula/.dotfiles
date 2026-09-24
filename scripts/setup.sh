@@ -41,22 +41,25 @@ function parser_options() {
   done
   shift $((OPTIND - 1))
 
-  if [ "$DRY_RUN" ]; then
+  # These options are also initialized to the literal string "false" by the
+  # installers.  Testing only for a non-empty value makes "false" truthy and
+  # accidentally enables every mode during a normal installation.
+  if [ "${DRY_RUN:-false}" = true ]; then
     DRY_RUN=true
     print_info "Dry-run mode enabled: commands will not be executed"
   fi
-  if [ "$SKIP_PKG_INSTALL" ]; then
+  if [ "${SKIP_PKG_INSTALL:-false}" = true ]; then
     SKIP_PKG_INSTALL=true
     print_info "Skipping package installation."
   fi
-  if [ "$VERBOSE" ]; then
+  if [ "${VERBOSE:-false}" = true ]; then
     VERBOSE=true
   fi
-  if [ "$DEBUG" ]; then
+  if [ "${DEBUG:-false}" = true ]; then
     DEBUG=true
     set -x
   fi
-  if [ "$REMOTE_CONTAINERS" = true ]; then
+  if [ "${REMOTE_CONTAINERS:-false}" = true ]; then
     SKIP_PKG_INSTALL=true
     print_info "Skip the packages installation and ssh setup that the remote container doesn't need."
   fi
