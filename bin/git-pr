@@ -54,7 +54,7 @@ function main() {
       update_pr_summary "${ARGS[@]}"
       ;;
     open)
-      open_pr "${ARGS[@]}"
+      run open_pr "${ARGS[@]}"
       ;;
     *)
       print_error "Unknown command: $ACTION"
