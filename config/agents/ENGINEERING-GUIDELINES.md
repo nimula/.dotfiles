@@ -63,8 +63,8 @@ For multi-step tasks, state a brief plan:
 ## 5. Git commit message rules
 
 Based on the provided git diff, analyze the change and determine the main purpose or effect of the change. Use that as the subject line (first line) following the Conventional Commits format.
-*Only* use one of: build:, ci:, docs:, feat:, fix:, perf:, refactor:, style:, test:
-Then, in the body (after a blank line), list the key implementation changes as bullet points (-).
+*Only* use one of: build:, ci:, chore:, docs:, feat:, fix:, perf:, refactor:, style:, test:
+When a body is needed, leave a blank line after the subject and list the key implementation changes as bullet points (-).
 
 Rules:
 

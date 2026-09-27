@@ -134,6 +134,7 @@ function setup_config_links() {
   run ln -fnsv "$CONFIG_DIR/vim/.vimrc" "$HOME"
   run ln -fnsv "$CONFIG_DIR/vim" "$HOME/.vim"
   run ln -fnsv "$CONFIG_DIR/git/.gitignore.global" "$HOME"
+  run ln -fnsv "$CONFIG_DIR/git/.commit-template" "$HOME"
   run mkdir -p "$XDG_CONFIG_HOME/herdr"
   run ln -fnsv "$CONFIG_DIR/herdr/config.toml" "$XDG_CONFIG_HOME/herdr/config.toml"
 
@@ -143,6 +144,7 @@ function setup_config_links() {
 
   # Link static gitconfig.
   run git config --global include.path "~/${CONFIG_DIR#$HOME/}/git/.gitconfig.static"
+  # Set git template directory for new repositories.
   run git config --global init.templatedir "~/${CONFIG_DIR#$HOME/}/git/git-templates"
 }
 

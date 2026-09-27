@@ -1,0 +1,28 @@
+# Conventional Commit
+#
+# <type>[optional scope]: <description>
+#
+# [optional body]
+#
+# [optional footer]
+#
+# Types:
+#
+# build:    build system or external dependencies
+# ci:       CI configuration and scripts
+# chore:    maintenance that does not fit another type
+# docs:     documentation only
+# feat:     new feature
+# fix:      bug fix
+# perf:     performance improvement
+# refactor: code change that neither fixes a bug nor adds a feature
+# style:    formatting or style without behavior changes
+# test:     adding or correcting tests
+#
+# Example:
+#
+# feat(auth): add token refresh support
+#
+# - refresh expired access tokens
+# - add retry handling for authentication requests
+#

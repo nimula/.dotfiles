@@ -57,3 +57,5 @@
   autoStash = true
 [init]
 	defaultBranch = main
+[commit]
+  template = ~/.commit-template

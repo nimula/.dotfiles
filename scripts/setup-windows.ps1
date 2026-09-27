@@ -368,9 +368,10 @@ function Set-GitConfig {
 
   $commonConfig = Join-Path $InstallDir "config\git\.gitconfig.common"
   $globalIgnore = Join-Path $InstallDir "config\git\.gitignore.global"
+  $commitTemplate = Join-Path $InstallDir "config\git\.commit-template"
   $templateDir = Join-Path $InstallDir "config\git\git-templates-windows"
 
-  foreach ($requiredPath in @($commonConfig, $globalIgnore, $templateDir)) {
+  foreach ($requiredPath in @($commonConfig, $globalIgnore, $commitTemplate, $templateDir)) {
     if (-not (Test-Path -LiteralPath $requiredPath)) {
       throw "Required Git configuration path not found: $requiredPath"
     }
@@ -385,6 +386,16 @@ function Set-GitConfig {
       "--global",
       "core.excludesfile",
       (ConvertTo-GitPath $globalIgnore)
+    ) `
+    -DryRun:$DryRun
+
+  Invoke-DotfilesCommand `
+    -FilePath "git.exe" `
+    -ArgumentList @(
+      "config",
+      "--global",
+      "commit.template",
+      (ConvertTo-GitPath $commitTemplate)
     ) `
     -DryRun:$DryRun
 
