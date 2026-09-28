@@ -1,5 +1,6 @@
 #!/bin/sh
 
+# PowerShell implements the same generation flow as the Bash hook.
 hook_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 script_path="$hook_dir/prepare-commit-msg.ps1"
 
@@ -7,12 +8,12 @@ if command -v cygpath >/dev/null 2>&1; then
   script_path=$(cygpath -w "$script_path")
 fi
 
-if command -v pwsh.exe >/dev/null 2>&1; then
-  exec pwsh.exe -NoProfile -File "$script_path" "$@"
+if command -v powershell.exe >/dev/null 2>&1; then
+  exec powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$script_path" "$@"
 fi
 
-if command -v powershell.exe >/dev/null 2>&1; then
-  exec powershell.exe -NoProfile -File "$script_path" "$@"
+if command -v pwsh.exe >/dev/null 2>&1; then
+  exec pwsh.exe -NoProfile -NonInteractive -File "$script_path" "$@"
 fi
 
 echo "[WARN] PowerShell was not found. Skipping prepare-commit-msg hook." >&2
