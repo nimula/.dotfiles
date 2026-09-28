@@ -8,11 +8,13 @@ if command -v cygpath >/dev/null 2>&1; then
   script_path=$(cygpath -w "$script_path")
 fi
 
-if command -v powershell.exe >/dev/null 2>&1; then
+if command -v powershell.exe >/dev/null 2>&1 &&
+  powershell.exe -NoProfile -NonInteractive -Command 'exit 0' >/dev/null 2>&1; then
   exec powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$script_path" "$@"
 fi
 
-if command -v pwsh.exe >/dev/null 2>&1; then
+if command -v pwsh.exe >/dev/null 2>&1 &&
+  pwsh.exe -NoProfile -NonInteractive -Command 'exit 0' >/dev/null 2>&1; then
   exec pwsh.exe -NoProfile -NonInteractive -File "$script_path" "$@"
 fi
 
