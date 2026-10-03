@@ -6,11 +6,12 @@
 
 Before implementing:
 
-- Prefer subagents for research tasks over inline exploration
-- State your assumptions explicitly. If uncertain, ask.
-- If multiple interpretations exist, present them - don't pick silently.
+- Keep small, localized, well-understood tasks in the main agent.
+- Delegate substantial read-heavy investigation only when it materially improves efficiency, context quality, parallelism, or review quality. Use platform-specific roles defined in ORCHESTRATE.md.
+- State assumptions explicitly. Ask when uncertainty materially affects requirements, correctness, scope, or authorization; continue independent work while awaiting clarification.
+- If materially different interpretations exist, surface the tradeoffs and clarify the requirement. Use reasonable judgment for routine implementation details.
 - If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what's confusing. Ask.
+- If missing information blocks safe progress, name the blocker and ask. Continue work that does not depend on the answer.
 
 ## 2. Simplicity First
 
@@ -42,6 +43,8 @@ When your changes create orphans:
 
 The test: Every changed line should trace directly to the user's request.
 
+For delegated changes, assign one writer per file set. The main agent must review the combined diff and validate integration before declaring completion.
+
 ## 4. Goal-Driven Execution
 
 **Define success criteria. Loop until verified.**
@@ -59,6 +62,10 @@ For multi-step tasks, state a brief plan:
 2. [Step] → verify: [check]
 3. [Step] → verify: [check]
 ```
+
+Choose validation appropriate to the change. Add regression tests for behavior changes when useful; use configuration parsing, documentation checks, or targeted smoke checks for non-code changes. Do not omit required project checks.
+
+When the same failure or underlying error recurs after an evidence-based correction, pause corrective retries while allowing useful evidence gathering, and request an independent assumption review using the platform-specific role in ORCHESTRATE.md. Continue only with a revised hypothesis and a concrete validation step; follow the retry budget in AGENT-POLICIES.md.
 
 ## 5. Git commit message rules
 
