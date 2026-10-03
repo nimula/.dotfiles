@@ -1,0 +1,20 @@
+# Main model
+model = "gpt-6.1-sol"
+model_reasoning_effort = "high"
+
+# Safe default for local development
+sandbox_mode = "workspace-write"
+approval_policy = "on-request"
+
+# Let the reviewer agent handle eligible approval requests.
+approvals_reviewer = "auto_review"
+
+# Cached search is safer and sufficient for most main-session work.
+# The researcher agent can override this when live documentation is needed.
+web_search = "cached"
+
+[agents]
+enabled = true
+
+# Prevent accidental agent fan-out and excessive token usage.
+max_concurrent_threads_per_session = 4
