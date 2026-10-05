@@ -13,7 +13,13 @@ export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
 
 mkdir -p "$TEST_ROOT/scripts" "$TEST_ROOT/config/agents" "$TEST_ROOT/bin" \
   "$TEST_ROOT/shims" "$TEST_ROOT/source/first" "$TEST_ROOT/source/nested/second"
-cp "$TEST_DIR/../scripts/setup-agents.sh" "$TEST_DIR/../scripts/utils.sh" "$TEST_ROOT/scripts/"
+cp "$TEST_DIR/../scripts/setup-agents.sh" "$TEST_DIR/../scripts/setup-codex.sh" \
+  "$TEST_DIR/../scripts/codex-managed.awk" \
+  "$TEST_DIR/../scripts/codex-utf8.awk" \
+  "$TEST_DIR/../scripts/utils.sh" "$TEST_ROOT/scripts/"
+cp "$TEST_DIR/../config/agents/AGENT-POLICIES.md" \
+  "$TEST_DIR/../config/agents/ENGINEERING-GUIDELINES.md" "$TEST_ROOT/config/agents/"
+cp -R "$TEST_DIR/../config/agents/codex" "$TEST_ROOT/config/agents/codex"
 printf 'Test agent configuration\n' > "$TEST_ROOT/config/agents/POLICIES.md"
 printf '%s\n' '---' 'name: first' '---' 'First skill.' > "$TEST_ROOT/source/first/SKILL.md"
 printf '%s\n' '---' 'name: second' '---' 'Second skill.' > "$TEST_ROOT/source/nested/second/SKILL.md"
@@ -35,7 +41,7 @@ chmod +x "$TEST_ROOT/shims/git"
 export TEST_SOURCE="$TEST_ROOT/source"
 
 run_setup() {
-  env HOME="$TEST_ROOT/$1" PATH="$TEST_ROOT/shims:$PATH" \
+  env HOME="$TEST_ROOT/$1" CODEX_HOME="$TEST_ROOT/$1/.codex" PATH="$TEST_ROOT/shims:$PATH" \
     DRY_RUN=false VERBOSE=false DEBUG=false \
     "$BASH" "$TEST_ROOT/scripts/setup-agents.sh"
 }
