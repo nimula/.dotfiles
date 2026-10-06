@@ -3,6 +3,7 @@
 source "$(dirname "$0")/utils.sh"
 set -Eeuo pipefail
 umask 077
+print_default "Setting up Codex..."
 
 fail() { print_error "Codex setup error: $*" >&2; exit 1; }
 

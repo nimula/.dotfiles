@@ -4,6 +4,8 @@
 source "$(dirname "$0")/utils.sh"
 set -Eeuo pipefail
 
+print_default "Setting up Agents..."
+
 function setup_agent_configs() {
   local options=(
     --source-dir "${CONFIG_DIR}/agents"
@@ -504,9 +506,9 @@ function sync_agent_skill_repo() (
 
   # Dry-run still clones so discovery, archives, and hashes are fully validated.
   if [ "$VERBOSE" = true ] || [ "$DRY_RUN" = true ]; then
-    print_default "+ git clone --depth 1 $repo_url $repo_dir"
+    print_default "+ git clone --depth=1 $repo_url $repo_dir"
   fi
-  if ! git clone --depth 1 "$repo_url" "$repo_dir"; then
+  if ! git clone -q --depth=1 "$repo_url" "$repo_dir"; then
     print_error "Failed to clone agent skill repository: $repo_url"
     return 1
   fi

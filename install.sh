@@ -5,10 +5,10 @@ INSTALL_DIR="${INSTALL_DIR:-$HOME/.dotfiles}"
 
 if [ -d "$INSTALL_DIR" ]; then
   echo "Updating dotfiles..."
-  git -C "$INSTALL_DIR" pull --rebase --autostash
+  git -C "$INSTALL_DIR" pull --rebase --autostash --depth=1
 else
   echo "Cloning dotfiles..."
-  git clone https://github.com/nimula/.dotfiles.git "$INSTALL_DIR"
+  git clone --depth=1 https://github.com/nimula/.dotfiles.git "$INSTALL_DIR"
 fi
 
 bash "$INSTALL_DIR/scripts/setup.sh" $@

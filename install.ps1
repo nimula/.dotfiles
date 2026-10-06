@@ -44,11 +44,11 @@ if (Test-Path -LiteralPath $InstallDir) {
   }
 
   Write-Info "Updating dotfiles in $InstallDir"
-  Invoke-Git -ArgumentList @("-C", $InstallDir, "pull", "--rebase", "--autostash")
+  Invoke-Git -ArgumentList @("-C", $InstallDir, "pull", "--rebase", "--autostash", "--depth=1")
 } else {
   Write-Info "Cloning dotfiles to $InstallDir"
   Invoke-Git -ArgumentList @(
-    "clone",
+    "clone", "--depth=1",
     "https://github.com/nimula/.dotfiles.git",
     $InstallDir
   )
