@@ -1,29 +1,30 @@
 #!/usr/bin/env bash
 # Linux/macOS installer; Bash 3.2+, Unix utilities and existing mikefarah/yq v4.
+source "$(dirname "$0")/utils.sh"
 set -Eeuo pipefail
 umask 077
 
+fail() { print_error "Codex setup error: $*" >&2; exit 1; }
+
 # Command-line paths override the defaults below.
-script_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
-source_dir="$script_dir/../config/agents"
+script_dir="$CURR_DIR"
+source_dir="$CONFIG_DIR/agents"
 codex_home="${CODEX_HOME:-${HOME}/.codex}"
 dry_run=false
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --source-dir|--codex-home)
-      [ "$#" -ge 2 ] || { echo "Missing argument: $1" >&2; exit 1; }
+      [ "$#" -ge 2 ] || fail "Missing argument: $1"
       case "$1" in
         --source-dir) source_dir=$2 ;;
         --codex-home) codex_home=$2 ;;
       esac
       shift 2 ;;
     --dry-run) dry_run=true; shift ;;
-    *) echo "Unknown option: $1" >&2; exit 1 ;;
+    *) fail "Unknown option: $1" ;;
   esac
 done
-
-fail() { echo "Codex setup error: $*" >&2; exit 1; }
 
 # Use an existing yq; the installer never installs dependencies.
 yq_bin=${DOTFILES_YQ:-yq}
@@ -176,18 +177,18 @@ for name in "${files[@]}"; do
   fi
 
   if $dry_run; then
-    printf 'Would update %s\n' "$codex_home/$name"
+    print_default "Would update $codex_home/$name"
   else
     mkdir -p "$(dirname "$codex_home/$name")"
     inspect "$codex_home/$name" file
     cat "$work/new/$name" > "$codex_home/$name"
-    printf 'Updated %s\n' "$codex_home/$name"
+    print_default "Updated $codex_home/$name"
   fi
 done
 
 # Ambiguous old Markdown blocks remain available for the user to review.
 if [ -f "$DOTFILES_WARNING" ]; then
-  echo 'Warning: latest instructions added; the original file may contain duplicate old instructions. Please review and remove duplicate sections manually.' >&2
+  print_warning 'Latest instructions added; the original file may contain duplicate old instructions. Please review and remove duplicate sections manually.' >&2
 fi
 
-$dry_run || echo 'Codex configuration installed. Start a new Codex session to load it.'
+$dry_run || print_success 'Codex configuration installed. Start a new Codex session to load it.'
