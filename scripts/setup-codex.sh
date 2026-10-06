@@ -128,7 +128,9 @@ for path in "$source_dir/AGENT-POLICIES.md" "$source_dir/ENGINEERING-GUIDELINES.
   utf8_file "$path" "$work/document"
 
   # Boundary blank lines belong to the managed block; interior text is intact.
-  LC_ALL=C awk -v newline="$newline" '
+  # macOS awk rejects literal newlines in -v values; build them inside awk.
+  LC_ALL=C awk '
+    BEGIN { newline = ENVIRON["DOTFILES_NEWLINE"] == "crlf" ? "\r\n" : "\n" }
     { sub(/\r$/, ""); lines[++count] = $0 }
     END {
       first = 1; last = count
