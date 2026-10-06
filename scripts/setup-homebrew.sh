@@ -27,3 +27,6 @@ run brew update
 
 print_default "Install packages with Homebrew..."
 run brew bundle install --file "${CONFIG_DIR}/homebrew/Brewfile"
+
+# Install standalone codex.
+run bash -c "curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh"
