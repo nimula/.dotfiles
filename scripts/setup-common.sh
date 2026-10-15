@@ -192,6 +192,12 @@ function set_skip_global_compinit() {
   if ! grep -q "skip_global_compinit=1" "$ZSHENV"; then
     run bash -c "printf '\nskip_global_compinit=1\n' >> \"$ZSHENV\""
   fi
+  if ! grep -q "autoload -Uz compinit" "$ZSHENV"; then
+    run bash -c "printf '\nautoload -Uz compinit\n' >> \"$ZSHENV\""
+  fi
+  if ! grep -q "compdef() { : }" "$ZSHENV"; then
+    run bash -c "printf '\ncompdef() { : }\n' >> \"$ZSHENV\""
+  fi
 }
 
 function main() {
