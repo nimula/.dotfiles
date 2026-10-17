@@ -18,3 +18,9 @@ run defaults write com.apple.desktopservices DSDontWriteNetworkStores -bool true
 run killall Dock
 run killall Finder
 run killall SystemUIServer
+
+# Install Codex.
+run bash -c "curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh"
+
+# Install Herdr.
+run bash -c "curl -fsSL https://herdr.dev/install.sh | sh"

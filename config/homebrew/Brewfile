@@ -1,6 +1,5 @@
 brew "bash"
 brew "git"
-brew "herdr"
 brew "rsync"
 brew "rtk"
 brew "yq"
